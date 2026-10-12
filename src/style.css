@@ -143,3 +143,7 @@ body.in-menu #touch, body.is-paused #touch { display: none; }
 #meter-fill{left:0;right:auto;top:-5px;bottom:-5px;width:4px;height:auto;border-radius:3px;background:#fff;opacity:1;z-index:4;transform:translateX(-50%);box-shadow:0 0 10px rgba(255,255,255,.5)}
 #meter-zone{top:0;bottom:0;height:auto;border-radius:5px;opacity:.8}#meter-ideal{top:0;bottom:0;height:auto;width:2px;background:#153322}.meter-label{position:absolute;bottom:30px;left:0;right:0;text-align:center;font-size:12px;color:var(--ink);text-shadow:0 2px 5px #000}#meter.green #meter-fill{background:var(--make)}
 @media(max-width:600px),(max-height:500px){#meter{left:50%;top:auto;bottom:max(16px,env(safe-area-inset-bottom));width:min(230px,40vw);height:20px}.meter-label{font-size:11px}}
+
+/* loading fallback hint: pure CSS so it appears even where scripts never run */
+.load-hint { max-width: 420px; text-align: center; color: var(--dim); font-size: 13px; opacity: 0; animation: hintIn .4s 8s forwards; padding: 0 16px; }
+@keyframes hintIn { to { opacity: 1; } }
