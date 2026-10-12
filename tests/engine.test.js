@@ -23,7 +23,7 @@ for(const id of ['curry','lebron','jordan','devin']){
  API.render();check(id+' pose contains no non-finite joint positions',()=>{G.player.model.root.traverse(n=>{for(const value of [...n.position.toArray(),...n.quaternion.toArray()])assert(Number.isFinite(value),n.name);});});
 }
 check('Signature paths differ even at equal normalized shot phase',()=>{
- const paths=[];for(const id of ['curry','lebron','jordan']){API.select(id);API.place(PH.K.HOOP_X-5,0);API.advance(.6);G.player.startShot(G.now);paths.push(G.player.shot.keys.signature.map(k=>[k.t/G.player.shot.T,k.p.y-G.player.dims.headY]));G.player.placeAt(G.player.x,G.player.z,G.player.yaw);}
+ const paths=[];for(const id of ['curry','lebron','jordan']){API.select(id);API.place(PH.K.HOOP_X-5,0);API.advance(.6);G.player.startShot(G.now);const T=G.player.shot.T,v=new THREE.Vector3();paths.push([.2,.4,.6,.8,1].map(u=>{G.player.shotBallWorld(u*T,v);return [+(v.y-G.player.dims.headY).toFixed(3)];}));G.player.placeAt(G.player.x,G.player.z,G.player.yaw);}
  assert.notDeepEqual(paths[0],paths[1]);assert.notDeepEqual(paths[1],paths[2]);
 });
 check('Trajectory line stays off even when requested or saved',()=>{API.setSetting('trail',true);API.setSetting('guide',true);assert.equal(G.settings.trail,false);assert.equal(G.settings.guide,false);API.render();assert.equal(G.W.trail.visible,false);assert.equal(G.W.guide.visible,false);});
@@ -85,8 +85,9 @@ check('Pro is more forgiving than Simulation while Simulation retains raw physic
 });
 check('Signature release extension and guide-hand recovery are visibly different',()=>{
  const defs=get('HoopRoster.CHARACTERS'),angles=[];
- for(const id of ['curry','lebron','jordan']){API.mode('free');API.select(id);API.advance(.6);assert(G.player.startShot(G.now));angles.push(G.player.shot.keys.alpha);G.player.placeAt(G.player.x,G.player.z,G.player.yaw);}
- assert(angles[2]-angles[0]>.30);assert(new Set(defs.slice(0,3).map(d=>d.style.guideDrop)).size===3);
+ const v=new THREE.Vector3();for(const id of ['curry','lebron','jordan']){API.mode('free');API.select(id);API.advance(.6);assert(G.player.startShot(G.now));G.player.shotBallWorld(G.player.shot.T,v);angles.push(v.y-G.player.dims.headY);G.player.placeAt(G.player.x,G.player.z,G.player.yaw);}
+ assert(angles[2]>angles[0],'Jordan releases higher above his head than Curry: '+angles);
+ for(const k of ['relElev','followHold','guideStay'])assert(new Set(defs.slice(0,3).map(d=>d.style[k])).size===3,k);
 });
 check('Restarting a drill abandons old flight and clears held input',()=>{API.mode('free');API.advance(.6);API.shoot(0);API.advance(.2);API.mode('three');assert.equal(G.shotInput,null);assert(!G.player.shot);assert(G.player.hasBall);assert.equal(G.lastShot,null);});
 check('Graphics quality changes rebuild the world once and preserve models',()=>{const old=G.W;API.setSetting('quality','medium');assert.notEqual(old,G.W);assert.equal(G.W.Q,World.QUALITY.medium);assert(G.models.curry.root.parent===G.W.scene);});
