@@ -41,15 +41,17 @@ const HoopModes = (() => {
     { id: 'atw', name: 'Around the World', desc: 'Seven spots around the key. Make it to move on. Finish in as few shots as you can.' },
     { id: 'streak', name: 'Hot Streak', desc: 'Shoot from anywhere 15 ft or deeper. How many in a row can you make?' },
     { id: 'custom', name: 'Custom Training', desc: 'Pick your spots, shots per spot, and a target percentage.' },
+    { id:'one',name:'1v1 vs AI',desc:'First to 11 by two. 1s and 2s; alternate possessions after every attempt. 14-second shot clock.' },
+    { id:'watch',name:'Watch AI vs AI',desc:'Two AI players compete using the same shot physics. Games restart automatically; camera controls remain available.' },
   ];
 
   function create(id, cfg = {}, records = {}) {
     const rec = records;
     const base = { id, name: MODE_INFO.find(m => m.id === id).name, done: false, ballReturn: null, spot: null, requireSpot: false, timer: null };
 
-    if (id === 'free') {
+    if (id === 'free' || id==='one' || id==='watch') {
       return ({ ...base,
-        onRelease() { return []; }, onResult() { return []; }, update() { return []; },
+        onRelease() { return []; }, onResult() { return []; }, update() { return []; }, ballReturn:id==='free'?null:'manual',
         hud() { return null; }, summary() { return null; },
       });
     }
