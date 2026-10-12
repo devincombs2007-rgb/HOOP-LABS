@@ -46,7 +46,7 @@ const HoopReplay = (() => {
     else { while (hi - lo > 1) { const m = (lo + hi) >> 1; if (d[m * FRAME] <= T) lo = m; else hi = m; } }
     const oa = lo * FRAME, ob = hi * FRAME;
     const span = d[ob] - d[oa], f = span > 1e-6 ? (T - d[oa]) / span : 0;
-    const L = (i) => d[oa + i] + (d[ob + i] - d[oa + i]) * f;
+    const L = (i) => d[oa + i] + (d[ob + i] - d[oa + i]) * f;  // (closure per call is fine: one apply per rendered frame)
     model.root.position.set(L(1), 0, L(2));
     model.nodes.Hips.position.set(L(3), L(4), L(5));
     let k = 6;
@@ -55,7 +55,9 @@ const HoopReplay = (() => {
       model.nodes[n].quaternion.copy(qa).slerp(qb, f); k += 4;
     }
     model.root.updateMatrixWorld(true);
-    out.length = 0;
+    // out[i] = { x, y, z } for each visible ball i, null otherwise (indexed like the game's ball pool; objects reused)
+    const pool = out.pool || (out.pool = []);
+    out.length = NB;
     for (let i = 0; i < NB; i++) {
       const vis = d[oa + k + 7] > 0.5 && d[ob + k + 7] > 0.5;
       const m = ballMeshes[i];
@@ -63,8 +65,9 @@ const HoopReplay = (() => {
         m.visible = true; m.position.set(L(k), L(k + 1), L(k + 2));
         qa.set(d[oa + k + 3], d[oa + k + 4], d[oa + k + 5], d[oa + k + 6]); qb.set(d[ob + k + 3], d[ob + k + 4], d[ob + k + 5], d[ob + k + 6]);
         m.quaternion.copy(qa).slerp(qb, f);
-        out.push({ x: m.position.x, y: m.position.y, z: m.position.z });
-      } else m.visible = false;
+        const o = pool[i] || (pool[i] = { x: 0, y: 0, z: 0 });
+        o.x = m.position.x; o.y = m.position.y; o.z = m.position.z; out[i] = o;
+      } else { m.visible = false; out[i] = null; }
       k += 8;
     }
   }
