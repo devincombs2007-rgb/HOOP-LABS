@@ -7,7 +7,7 @@ const HoopInput = (() => {
     stick: { x: 0, y: 0 }, touchMove: { x: 0, y: 0 }, touchSprint: false };
   let canvas = null, enabled = true, dragging = false, lastMX = 0, lastMY = 0;
   const gpPrev = {};
-  const KEYMAP = { Space: 'shoot', KeyX: 'cross', KeyC: 'stepback', KeyR: 'ball', KeyV: 'camera', Escape: 'pause', KeyT: 'replay', KeyH: 'hud', KeyM: 'mute', Tab: 'stats', KeyF: 'fullscreen' };
+  const KEYMAP = { Space: 'shoot', KeyX: 'cross', KeyC: 'stepback', KeyR: 'ball', KeyV: 'camera', Escape: 'pause', KeyT: 'replay', KeyH: 'hud', KeyM: 'mute', Tab: 'stats', KeyF: 'fullscreen',KeyE:'dunk',KeyB:'behind',KeyN:'between',KeyZ:'hesitation' };
 
   function push(type, t) { events.push({ type, t: t ?? performance.now() }); }
 
@@ -74,13 +74,14 @@ const HoopInput = (() => {
     edge(1, 'stepback');             // B / Circle
     edge(3, 'ball');                 // Y / Triangle
     edge(4, 'camera');               // LB
+    edge(5,'handle');edge(10,'dunk');
     edge(9, 'pause');                // Start / Options
     edge(8, 'replay');               // Back / View
     edge(12, 'zoomIn'); edge(13, 'zoomOut');
     const dz = (v) => Math.abs(v) < 0.15 ? 0 : (v - Math.sign(v) * 0.15) / 0.85;
     const lx = dz(gp.axes[0] || 0), ly = dz(gp.axes[1] || 0), rx = dz(gp.axes[2] || 0), ry = dz(gp.axes[3] || 0);
     if (Math.abs(lx) + Math.abs(ly) + Math.abs(rx) + Math.abs(ry) > 0 || gp.buttons.some(x => x.pressed)) st.lastDevice = 'gamepad';
-    return { lx, ly, rx, ry, sprint: b(7) || b(5), walk: b(6) };
+    return { lx, ly, rx, ry, sprint: b(7), walk: b(6) };
   }
 
   // touch: left half = virtual stick, right side buttons + camera drag
@@ -88,6 +89,7 @@ const HoopInput = (() => {
   function setupTouch() {
     const root = document.getElementById('touch');
     if (!root) return;
+    if (navigator.maxTouchPoints > 0) { st.touch = true; document.body.classList.add('is-touch'); }
     const knob = root.querySelector('.stick-knob'), base = root.querySelector('.stick');
     let sx = 0, sy = 0;
     window.addEventListener('touchstart', (e) => {

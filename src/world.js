@@ -145,7 +145,7 @@ const HoopWorld = (() => {
   // ------------------------------------------------------------------ verlet net
   class Net {
     constructor(hoop, scene, mat) {
-      this.hoop = hoop; this.cols = 12; this.rows = 7;
+      this.hoop = hoop; this.cols = 16; this.rows = 9; this.pulse=null; this.reaction='idle';
       const n = this.cols * this.rows;
       this.p = new Float32Array(n * 3); this.o = new Float32Array(n * 3); this.rest = new Float32Array(n * 3);
       for (let k = 0; k < this.rows; k++) for (let j = 0; j < this.cols; j++) {
@@ -174,10 +174,22 @@ const HoopWorld = (() => {
       this.energy = 0;
       this.writeLines();
     }
-    reset() { this.p.set(this.rest); this.o.set(this.rest); this.writeLines(); }
+    reset() { this.p.set(this.rest); this.o.set(this.rest); this.pulse=null;this.energy=0;this.writeLines(); }
+    react(kind, data) {
+      this.reaction=kind;
+      this.pulse={kind,t:0,vx:data.vx||0,vz:data.vz||0,speed:Math.min(10,Math.abs(data.vy||4))};
+      // Entering balls pull the net down and carry their lateral momentum into its lower rings.
+      for(let row=1;row<this.rows;row++)for(let j=0;j<this.cols;j++){
+        const i=(row*this.cols+j)*3,depth=row/(this.rows-1),power=kind==='dunk'?1.7:kind==='rattle'?.75:1;
+        this.o[i]-=this.pulse.vx*.012*depth;this.o[i+2]-=this.pulse.vz*.012*depth;
+        this.o[i+1]+=Math.min(.065,this.pulse.speed*.004)*depth*power;
+      }
+      this.energy=1;
+    }
     step(dt, balls) {
       const p = this.p, o = this.o, n = this.cols * this.rows;
-      const g = -9.81 * dt * dt, damp = 0.965;
+      const g = -9.81 * dt * dt, damp = Math.exp(-2.14*dt);
+      if(this.pulse)this.pulse.t+=dt;
       let moved = 0;
       for (let i = this.cols; i < n; i++) {
         const i3 = i * 3;
@@ -185,7 +197,15 @@ const HoopWorld = (() => {
         o[i3] = p[i3]; o[i3 + 1] = p[i3 + 1]; o[i3 + 2] = p[i3 + 2];
         p[i3] += vx; p[i3 + 1] += vy + g; p[i3 + 2] += vz;
         // gentle pull back to the rest shape (net memory / weave stiffness)
-        p[i3] += (this.rest[i3] - p[i3]) * 0.012; p[i3 + 1] += (this.rest[i3 + 1] - p[i3 + 1]) * 0.012; p[i3 + 2] += (this.rest[i3 + 2] - p[i3 + 2]) * 0.012;
+        const memory=1-Math.exp(-.72*dt);
+        p[i3] += (this.rest[i3] - p[i3]) * memory; p[i3 + 1] += (this.rest[i3 + 1] - p[i3 + 1]) * memory; p[i3 + 2] += (this.rest[i3 + 2] - p[i3 + 2]) * memory;
+        if(this.pulse&&this.pulse.t<.36){
+          const depth=Math.floor(i/this.cols)/(this.rows-1),angle=(i%this.cols)/this.cols*Math.PI*2;
+          const wave=Math.sin(Math.max(0,this.pulse.t-depth*.035)*Math.PI/.32)*Math.exp(-this.pulse.t*6)*depth;
+          const flare=(this.pulse.kind==='dunk'?.20:this.pulse.kind==='rattle'?.065:.12)*wave*dt*12;
+          p[i3]+=Math.cos(angle)*flare;p[i3+2]+=Math.sin(angle)*flare;
+          if(this.pulse.kind==='rattle')p[i3]+=Math.sin(angle*3+this.pulse.t*35)*dt*.045*depth;
+        }
         moved += Math.abs(vx) + Math.abs(vy) + Math.abs(vz);
       }
       for (let it = 0; it < 3; it++) {
@@ -212,6 +232,7 @@ const HoopWorld = (() => {
         }
       }
       this.energy = moved;
+      if(this.pulse&&this.pulse.t>1.8)this.pulse=null;
     }
     writeLines() {
       const p = this.p, L = this.lp;

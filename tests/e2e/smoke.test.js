@@ -41,6 +41,11 @@ const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
     const r3 = await shoot(id, 12.7248 - 7.6, 0, 0);
     check(`${id}: perfectly timed top-of-key 3 scores`, r3.ok && r3.s && r3.s.made, r3.s ? `${r3.s.result} ${r3.s.dist.toFixed(2)} m` : 'no shot');
   }
+  const pro90 = await shoot('curry', 12.7248 - 7.6, 0, 90);
+  check('Pro: 90 ms late (outside the green window) misses', pro90.s && !pro90.s.made, pro90.s && (pro90.s.missType || pro90.s.result));
+  await page.evaluate(() => HOOP.setSetting('difficulty', 'sim'));
+  const sim0 = await shoot('jordan', 12.7248 - 7.6, 0, 0);
+  check('Simulation: perfectly timed 3 scores (no assist)', sim0.s && sim0.s.made, sim0.s && sim0.s.result);
   const early = await shoot('curry', 12.7248 - 7.6, 0, -140);
   check('Very early release misses short', early.s && !early.s.made && /front|short/.test(early.s.missType), early.s && early.s.missType);
   const late = await shoot('curry', 12.7248 - 7.6, 0, 140);

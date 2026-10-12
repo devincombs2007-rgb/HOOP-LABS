@@ -55,6 +55,7 @@ const HoopRoster = (() => {
       shoot: { baseRange: 10.2, kMul: 0.86, kMulMid: 0.86, moveComp: 0.94, releaseMul: 0.92, heave: 1.05 },
       sig: { id: 'sig', name: 'Signature: Stephen Curry', params: P({ pocket: .48, dip: .22, motion: 0, setPoint: .58, extension: .42, speed: .95, arc: .62, elbow: .1, guide: .18, flick: .66, knee: .56, jump: .32, releaseTiming: .28, footWidth: .44, footStagger: .28, lean: .04 }) },
       attrs: { Range: 97, Release: 98, 'Shot IQ on the move': 96, Strength: 62, Speed: 86, Elevation: 70 },
+      style: { shot: 'continuous', turn: -.12, guideOff: .80, guideDrop:.10,flickTime:.08,follow: .55, feetSweep: .16, dunk: 'onehand', dribble: 'compact' },
     },
     {
       id: 'lebron', file: 'lebron_james.glb', name: 'LeBron James', short: 'LeBron', plate: 'JAMES', number: '23',
@@ -65,6 +66,7 @@ const HoopRoster = (() => {
       shoot: { baseRange: 9.4, kMul: 1.02, kMulMid: 1.0, moveComp: 0.84, releaseMul: 1.06, heave: 1.3 },
       sig: { id: 'sig', name: 'Signature: LeBron James', params: P({ pocket: .58, dip: .2, motion: .45, setPoint: .7, extension: .4, speed: .55, arc: .45, elbow: .22, guide: .3, flick: .58, knee: .45, jump: .38, releaseTiming: .62, footWidth: .7, footStagger: .35, lean: -.02 }) },
       attrs: { Range: 84, Release: 80, 'Shot IQ on the move': 82, Strength: 98, Speed: 92, Elevation: 88 },
+      style: { shot: 'power', turn: -.26, guideOff: .91, guideDrop:.24,flickTime:.13,follow: .38, feetSweep: -.04, dunk: 'twohand', dribble: 'power' },
     },
     {
       id: 'jordan', file: 'michael_jordan.glb', name: 'Michael Jordan', short: 'Jordan', plate: 'JORDAN', number: '23',
@@ -75,6 +77,7 @@ const HoopRoster = (() => {
       shoot: { baseRange: 8.6, kMul: 0.98, kMulMid: 0.74, moveComp: 0.89, releaseMul: 1.0, heave: 1.1 },
       sig: { id: 'sig', name: 'Signature: Michael Jordan', params: P({ pocket: .62, dip: .25, motion: .55, setPoint: .9, extension: .3, speed: .62, arc: .5, elbow: .08, guide: .2, flick: .78, knee: .5, jump: .78, releaseTiming: .95, footWidth: .45, footStagger: .38, lean: -.18 }) },
       attrs: { Range: 78, Release: 90, 'Shot IQ on the move': 88, Strength: 80, Speed: 90, Elevation: 99 },
+      style: { shot: 'apex', turn: -.32, guideOff: .88, guideDrop:.38,flickTime:.11,follow: .75, feetSweep: -.20, dunk: 'tomahawk', dribble: 'wing' },
     },
   ];
 
