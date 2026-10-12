@@ -8,9 +8,18 @@ const HoopPhysics = (() => {
     G: 9.81,
     BALL_R: 0.1195,          // regulation men's ball, 0.239 m diameter
     BALL_M: 0.62,
-    AIR_RHO: 1.204,
-    CD: 0.50,                // drag coefficient for a basketball near Re ~ 1.5e5
-    CL_PER_S: 0.60,          // lift coefficient per unit spin parameter (r*w/v)
+    // --- aerodynamics (flight). Re = v*D/nu ~ 1.6e4 * v: every normal shot (4-13 m/s) is subcritical.
+    AIR_RHO: 1.204,          // kg/m^3, dry air at 20 °C, sea level
+    AIR_NU: 1.516e-5,        // m^2/s, kinematic viscosity of air at 20 °C
+    CD: 0.50,                // subcritical drag coefficient (smooth sphere 0.47; pebbled, seamed ball ~0.5)
+    CD_CRISIS: 0.30,         // drag after the drag crisis (rough sphere, supercritical)
+    RE_CRISIS0: 2.2e5,       // drag crisis starts (~14 m/s: heaves only). Roughness moves it below the
+    RE_CRISIS1: 3.6e5,       //   smooth-sphere 3.5e5; smooth cubic blend in between, no kink in the force
+    CL_PER_S: 1.0,           // Magnus lift slope dCL/dS at low spin parameter S = r*w_perp/v
+    CL_MAX: 0.5,             // lift saturates at high spin: CL = S / (1/CL_PER_S + S/CL_MAX)  (= S/(1+2S))
+    SPIN_DECAY: 0.0022,      // 1/m: aerodynamic spin-down dw/dt = -SPIN_DECAY*|v|*w (~1.8 %/s at 8 m/s)
+    BALL_BALL_E: 0.78,       // ball-ball restitution (two inflated balls; ~ball on hardwood at half the speed)
+    BALL_BALL_MU: 0.55,      // pebbled rubber on pebbled rubber
     COURT_HALF_L: 14.325,    // 94 ft court
     COURT_HALF_W: 7.62,      // 50 ft court
     RIM_TOP: 3.048,          // 10 ft to top of ring
@@ -32,8 +41,11 @@ const HoopPhysics = (() => {
   K.RIM_R = K.RIM_IN_R + K.RIM_TUBE;                    // torus centerline radius
   K.RIM_Y = K.RIM_TOP - K.RIM_TUBE;                     // torus center height
   K.AREA = Math.PI * K.BALL_R * K.BALL_R;
-  K.K_DRAG = 0.5 * K.AIR_RHO * K.CD * K.AREA / K.BALL_M;
-  K.K_MAGNUS = 0.5 * K.AIR_RHO * K.AREA * K.BALL_R * K.CL_PER_S / K.BALL_M;
+  K.K_DRAG = 0.5 * K.AIR_RHO * K.CD * K.AREA / K.BALL_M;       // subcritical drag accel / v^2 (0 = no drag)
+  K.K_MAGNUS = 0.5 * K.AIR_RHO * K.AREA * K.BALL_R * K.CL_PER_S / K.BALL_M; // low-spin lift accel / |w x v| (0 = no lift)
+  K.RE_PER_V = 2 * K.BALL_R / K.AIR_NU;                        // Reynolds number per m/s
+  K.CD_DROP = 1 - K.CD_CRISIS / K.CD;                          // fractional drag drop across the crisis
+  K.CL_SAT = K.CL_PER_S / K.CL_MAX;
   K.BALL_I = (2 / 3) * K.BALL_M * K.BALL_R * K.BALL_R; // thin-shell approximation
   // court markings (NBA), distances from hoop center unless noted
   K.THREE_ARC = 7.239;       // 23 ft 9 in
@@ -208,17 +220,33 @@ const HoopPhysics = (() => {
   }
 
   // ---------------------------------------------------------------- free-flight acceleration
-  // gravity + quadratic drag + Magnus lift from spin
+  // gravity + quadratic drag with a Reynolds-dependent Cd (drag crisis) + Magnus lift from spin.
+  // Drag:   a = -(rho*A/2m) * Cd(Re) * |v| * v,      Cd = CD below RE_CRISIS0, CD_CRISIS above RE_CRISIS1.
+  // Magnus: a = (rho*A/2m) * CL(S) * |v|^2 along w x v, CL(S) = S/(1/CL_PER_S + S/CL_MAX),
+  //         S = r*|w x v|/|v|^2 (only the spin component perpendicular to v makes lift). Written as
+  //         K_MAGNUS * (w x v) / (1 + CL_SAT*S): no division by |w| or |v|, bounded as v -> 0.
+  // Allocation-free (runs 2x per substep per ball).
   function accel(vx, vy, vz, wx, wy, wz, out) {
-    const sp = Math.hypot(vx, vy, vz);
-    const kd = K.K_DRAG * sp, km = K.K_MAGNUS;
-    out[0] = -kd * vx + km * (wy * vz - wz * vy);
-    out[1] = -K.G - kd * vy + km * (wz * vx - wx * vz);
-    out[2] = -kd * vz + km * (wx * vy - wy * vx);
+    const v2 = vx * vx + vy * vy + vz * vz, sp = Math.sqrt(v2);
+    let kd = K.K_DRAG * sp;
+    const re = sp * K.RE_PER_V;
+    if (re > K.RE_CRISIS0) {
+      const t = re >= K.RE_CRISIS1 ? 1 : (re - K.RE_CRISIS0) / (K.RE_CRISIS1 - K.RE_CRISIS0);
+      kd *= 1 - K.CD_DROP * t * t * (3 - 2 * t);
+    }
+    const cx = wy * vz - wz * vy, cy = wz * vx - wx * vz, cz = wx * vy - wy * vx;
+    let km = K.K_MAGNUS;
+    if (km !== 0 && v2 > 1e-12) km /= 1 + K.CL_SAT * K.BALL_R * Math.sqrt(cx * cx + cy * cy + cz * cz) / v2;
+    out[0] = -kd * vx + km * cx;
+    out[1] = -K.G - kd * vy + km * cy;
+    out[2] = -kd * vz + km * cz;
   }
   const A1 = [0, 0, 0], A2 = [0, 0, 0];
 
-  function integrateFree(b, h) { // Heun / RK2
+  // Heun / RK2 for velocity, trapezoidal position update (exact for constant acceleration, so the
+  // drag-free limit is exact). Spin is held over the step, then decays with the aerodynamic torque.
+  // Works on any object with p*, v*, w* fields (the game also uses it for the aim-guide preview).
+  function integrateFree(b, h) {
     accel(b.vx, b.vy, b.vz, b.wx, b.wy, b.wz, A1);
     const vx1 = b.vx + A1[0] * h, vy1 = b.vy + A1[1] * h, vz1 = b.vz + A1[2] * h;
     accel(vx1, vy1, vz1, b.wx, b.wy, b.wz, A2);
@@ -227,19 +255,25 @@ const HoopPhysics = (() => {
     const nvz = b.vz + 0.5 * (A1[2] + A2[2]) * h;
     b.px += 0.5 * (b.vx + nvx) * h; b.py += 0.5 * (b.vy + nvy) * h; b.pz += 0.5 * (b.vz + nvz) * h;
     b.vx = nvx; b.vy = nvy; b.vz = nvz;
+    // spin-down: w *= exp(-SPIN_DECAY*|v|*h); the exponent is ~1e-5 per substep, so 1/(1+x) is exact enough
+    const sd = 1 / (1 + K.SPIN_DECAY * Math.sqrt(nvx * nvx + nvy * nvy + nvz * nvz) * h);
+    b.wx *= sd; b.wy *= sd; b.wz *= sd;
   }
 
+  // exact rotation for constant w over the step: q <- dq(w*h) ⊗ q (world-frame angular velocity)
   function integrateOrientation(b, h) {
-    const { wx, wy, wz } = b;
-    let { qx, qy, qz, qw } = b;
-    const hx = 0.5 * h;
-    const dqx = hx * (wx * qw + wy * qz - wz * qy);
-    const dqy = hx * (wy * qw + wz * qx - wx * qz);
-    const dqz = hx * (wz * qw + wx * qy - wy * qx);
-    const dqw = hx * (-wx * qx - wy * qy - wz * qz);
-    qx += dqx; qy += dqy; qz += dqz; qw += dqw;
-    const l = Math.hypot(qx, qy, qz, qw) || 1;
-    b.qx = qx / l; b.qy = qy / l; b.qz = qz / l; b.qw = qw / l;
+    const wx = b.wx, wy = b.wy, wz = b.wz;
+    const w = Math.sqrt(wx * wx + wy * wy + wz * wz);
+    if (w < 1e-9) return;
+    const half = 0.5 * w * h, s = Math.sin(half) / w, dw = Math.cos(half);
+    const dx = wx * s, dy = wy * s, dz = wz * s;
+    const qx = b.qx, qy = b.qy, qz = b.qz, qw = b.qw;
+    const nx = dw * qx + dx * qw + dy * qz - dz * qy;
+    const ny = dw * qy + dy * qw + dz * qx - dx * qz;
+    const nz = dw * qz + dz * qw + dx * qy - dy * qx;
+    const nw = dw * qw - dx * qx - dy * qy - dz * qz;
+    const l = Math.sqrt(nx * nx + ny * ny + nz * nz + nw * nw) || 1;
+    b.qx = nx / l; b.qy = ny / l; b.qz = nz / l; b.qw = nw / l;
   }
 
   // net: soft zone below the ring that funnels and slows the ball
