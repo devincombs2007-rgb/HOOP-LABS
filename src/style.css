@@ -8,6 +8,8 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #0d0f13; color: var(--ink); font-family: var(--ui); font-variant-numeric: tabular-nums; }
 #app, #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#view, #touch { touch-action: none; -webkit-user-select: none; user-select: none; }
+button { -webkit-tap-highlight-color: transparent; }
 .hidden { display: none !important; }
 .dim { color: var(--dim); }
 button { font: 600 15px var(--ui); color: var(--ink); background: rgba(255,255,255,0.08); border: 1px solid var(--line); border-radius: 8px; padding: 10px 18px; cursor: pointer; }
@@ -63,8 +65,8 @@ body.in-menu #hud, body.hud-off #hud > :not(#meter):not(#grade) { visibility: hi
 .toast.show { opacity: 1; } .toast.good { border-color: var(--make); } .toast.bad { border-color: var(--miss); }
 
 /* menu */
-#menu { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: linear-gradient(180deg, rgba(8,10,14,0.55), rgba(8,10,14,0.9)); overflow: auto; padding: 24px 16px; }
-.menu-inner { width: min(1100px, 100%); display: flex; flex-direction: column; gap: 18px; }
+#menu { position: fixed; inset: 0; z-index: 20; display: flex; align-items: flex-start; justify-content: center; background: linear-gradient(180deg, rgba(8,10,14,0.55), rgba(8,10,14,0.9)); overflow: auto; padding: 24px 16px; }
+.menu-inner { width: min(1100px, 100%); display: flex; flex-direction: column; gap: 18px; margin: auto 0; flex-shrink: 0; }
 .menu-inner .sub { color: var(--dim); margin-top: -10px; }
 #char-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
 .char-card { text-align: left; position: relative; padding: 18px; background: rgba(16,19,25,0.85); border: 2px solid var(--line); border-radius: 12px; overflow: hidden; }
@@ -87,6 +89,7 @@ body.in-menu #hud, body.hud-off #hud > :not(#meter):not(#grade) { visibility: hi
 #touch { display: none; }
 body.is-touch #touch { display: block; position: fixed; inset: 0; z-index: 6; pointer-events: none; }
 body.is-touch #keys { display: none; }
+body.in-menu #touch, body.is-paused #touch { display: none; }
 #touch .stick { position: absolute; width: 120px; height: 120px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.25); left: 40px; bottom: 60px; opacity: 0.5; }
 #touch .stick.on { opacity: 1; }
 #touch .stick-knob { position: absolute; left: 35px; top: 35px; width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,0.35); }
@@ -96,3 +99,47 @@ body.is-touch #keys { display: none; }
 #touch [data-touch="cross"] { right: 140px; bottom: 40px; } #touch [data-touch="stepback"] { right: 130px; bottom: 120px; }
 #touch [data-touch="ball"] { right: 50px; bottom: 160px; } #touch [data-touch="camera"] { right: 16px; top: 60px; }
 #touch [data-touch="pause"] { left: 16px; top: 120px; }
+#touch [data-touch="handle"] { right: 210px; bottom: 80px; }
+#touch [data-touch="dunk"] { right: 150px; bottom: 200px; }
+
+@media (max-width: 600px), (max-height: 500px) {
+  #menu { padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+  .menu-inner { gap: 12px; }
+  .logo { font-size: 44px; }
+  #char-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .char-card { padding: 10px 8px; }
+  .char-card .cname { font-size: 19px; }
+  .char-card .role { font-size: 11px; }
+  .char-card p, .char-card .attrs, .char-card .num { display: none; }
+  .row { gap: 8px; }
+  #btn-play { flex: 1; min-width: 100px; }
+  .play-help { font-size: 12px; line-height: 1.45; }
+  #mode-panel { top: max(8px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left)); min-width: 0; max-width: 45%; padding: 6px 8px; }
+  #mode-panel .mt { font-size: 10px; }
+  #mode-panel .mm { font-size: 28px; }
+  #mode-panel .ms { font-size: 10px; }
+  #dist { top: 8px; left: auto; right: max(8px, env(safe-area-inset-right)); transform: none; font-size: 11px; }
+  #fps { display: none; }
+  #last-shot { top: 44px; bottom: auto; right: 8px; min-width: 0; padding: 6px 8px; }
+  #last-shot .res { font-size: 20px; }
+  #last-shot .kv { display: none; }
+  #touch .stick { left: max(20px, env(safe-area-inset-left)); bottom: max(20px, env(safe-area-inset-bottom)); }
+  #touch .tbtn.shoot { right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); width: 78px; height: 78px; }
+  #touch .tbtn { width: 50px; height: 50px; }
+  #touch [data-touch="cross"] { right: 108px; bottom: 16px; }
+  #touch [data-touch="stepback"] { right: 104px; bottom: 78px; }
+  #touch [data-touch="ball"] { right: 24px; bottom: 108px; }
+  #touch [data-touch="camera"] { top: 86px; right: 16px; }
+  #touch [data-touch="pause"] { left: 8px; top: 108px; }
+  #touch [data-touch="handle"] { right: 164px; bottom: 48px; }
+  #touch [data-touch="dunk"] { right: 96px; bottom: 140px; }
+  #meter { left: calc(50% + 50px); height: 130px; }
+  .grade { font-size: 23px; }
+}
+
+#profile{padding:20px;overflow:auto;align-items:flex-start}.profile-card{margin:auto;width:min(1100px,100%);padding:24px;background:#121821;border:1px solid var(--line);border-radius:14px;flex-shrink:0}.profile-card h2{font:800 34px var(--display);margin:6px 0}.profile-card h2 span{color:var(--gold);font-size:22px}.profile-grid{display:grid;grid-template-columns:1fr 1.2fr 1fr;gap:24px;margin:22px 0}.profile-grid h3{font:700 24px var(--display)}.profile-card p{font-size:13px;line-height:1.5}.attribute-row{display:grid;grid-template-columns:1fr auto;font-size:12px;position:relative;margin:11px 0;padding-bottom:5px}.attribute-row i{position:absolute;bottom:0;left:0;height:2px;background:var(--gold);max-width:100%}.badge-item{border-left:3px solid var(--tier);padding:8px 10px;margin:8px 0;background:#1a222d;display:grid;grid-template-columns:1fr auto;gap:4px;font-size:12px}.badge-item span{color:var(--tier)}.badge-item small{grid-column:1/-1;color:var(--dim);line-height:1.4}.profile-card a{color:var(--gold)}button:disabled{opacity:.4;cursor:default}@media(max-width:760px){.profile-grid{grid-template-columns:1fr}.profile-card{padding:16px}#profile{padding:10px}#char-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* Accessible horizontal shot timing rail: cursor, target band, then release feedback. */
+#meter{left:50%;top:auto;bottom:max(28px,env(safe-area-inset-bottom));transform:translateX(-50%);width:min(300px,44vw);height:22px;overflow:visible;border-radius:7px;background:rgba(4,8,14,.9)}
+#meter-fill{left:0;right:auto;top:-5px;bottom:-5px;width:4px;height:auto;border-radius:3px;background:#fff;opacity:1;z-index:4;transform:translateX(-50%);box-shadow:0 0 10px rgba(255,255,255,.5)}
+#meter-zone{top:0;bottom:0;height:auto;border-radius:5px;opacity:.8}#meter-ideal{top:0;bottom:0;height:auto;width:2px;background:#153322}.meter-label{position:absolute;bottom:30px;left:0;right:0;text-align:center;font-size:12px;color:var(--ink);text-shadow:0 2px 5px #000}#meter.green #meter-fill{background:var(--make)}
+@media(max-width:600px),(max-height:500px){#meter{left:50%;top:auto;bottom:max(16px,env(safe-area-inset-bottom));width:min(230px,40vw);height:20px}.meter-label{font-size:11px}}

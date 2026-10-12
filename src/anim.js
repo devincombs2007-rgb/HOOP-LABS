@@ -64,12 +64,13 @@ const HoopPlayer = (() => {
       this.placeAt(this.x, this.z, this.yaw);
     }
 
-    setJumper(params, derived) { this.jumper = params; this.derived = derived; }
+    setJumper(params, derived) { this.jumper = params; this.derived = derived; this.signature = Object.keys(this.def.sig.params).every(k => params[k] === this.def.sig.params[k]); }
 
     placeAt(x, z, yaw) {
       this.x = x; this.z = z; this.vx = this.vz = 0; this.yaw = this.faceYaw = yaw;
       this.air = false; this.airY = 0; this.airVy = 0; this.gaitMode = false;
       this.action = 'none'; this.actionT = 0; this.shot = null; this.autopilot = null; this.dribbling = false; this.holdT = 1;
+      this.queuedShot = null; this.dunkState = null; this.handleState = null;
       const f = this.fwd(yaw), r = this.right(yaw);
       for (let i = 0; i < 2; i++) {
         const s = i === 0 ? 1 : -1, ft = this.feet[i];
@@ -105,7 +106,7 @@ const HoopPlayer = (() => {
       this.shot = {
         start: now, t: 0, T, v0, tApex, tTake, tLoad, released: false, releaseT: null, catchShoot, pullUp,
         startBall: null, keys: null, dropAfter: null, landed: false, faceYaw: this.hoopYaw(),
-        guideOff: T * lerp(0.7, 1.03, p.guide), landT: tTake + 2 * tApex,
+        guideOff: T * (this.signature ? this.def.style.guideOff : lerp(0.7, 1.03, p.guide)), landT: tTake + 2 * tApex,
       };
       // capture the ball's current position in the body frame (path starts there: no pop)
       const f = this.fwd(this.yaw), r = this.right(this.yaw);
@@ -124,7 +125,7 @@ const HoopPlayer = (() => {
       const pocket = { r: 0.12, u: lerp(d.hipsY + 0.06, d.shoulderY + 0.02, p.pocket), f: 0.27 * hs };
       const dip = { r: 0.12, u: pocket.u - 0.24 * p.dip * hs, f: pocket.f + 0.03 };
       const setP = { r: 0.06, u: d.shoulderY + lerp(0.2, 0.46, p.setPoint) * hs, f: (0.08 + 0.16 * p.extension) * hs };
-      const alpha = clamp(lerp(82, 46, p.extension) + 10 * (p.setPoint - 0.5), 40, 88) * Math.PI / 180;
+      const alpha = (this.signature ? ({continuous:62,power:72,apex:85})[this.def.style.shot] : clamp(lerp(82, 46, p.extension) + 10 * (p.setPoint - 0.5), 40, 88)) * Math.PI / 180;
       const reach = d.armLen * 0.9 + d.palm * 0.9;
       const theta = 52 * Math.PI / 180; // nominal launch direction for the ball-on-hand offset
       const rel = {
@@ -143,6 +144,21 @@ const HoopPlayer = (() => {
       const tSet = Math.max(tDip + 0.08, s.T - 0.19), tHold = Math.max(tSet + 0.02, s.T - 0.11);
       const two = [ { t: 0, p: start }, { t: tDip, p: P(dip) }, { t: tSet, p: P(setP), hold: true }, { t: tHold, p: P(setP).add(V(0, 0.015, 0.01)), hold: true }, { t: s.T, p: P(rel), vEnd: relV } ];
       s.keys = { one, two, rel: P(rel), alpha, setP: P(setP), pocket: P(pocket) };
+      // Each signature has a different ball path, beyond merely changing release speed.
+      if (this.signature) {
+        const kind = this.def.style.shot, set = P(setP), release = P(rel);
+        if (kind === 'continuous') {
+          set.x=.04*hs; set.y=d.headY+.025*hs; set.z=.19*hs;
+          s.keys.signature=[{t:0,p:start},{t:s.T*.18,p:P(dip)},{t:s.T*.47,p:P(via)},{t:s.T*.73,p:set},{t:s.T,p:release,vEnd:relV}];
+        } else if (kind === 'power') {
+          set.x=.10*hs; set.y=d.headY+.04*hs; set.z=.16*hs;
+          const low=P(dip);low.x=.16*hs;
+          s.keys.signature=[{t:0,p:start},{t:s.T*.22,p:low},{t:s.T*.60,p:set,hold:true},{t:s.T*.77,p:set.clone().add(V(0,.025,0)),hold:true},{t:s.T,p:release,vEnd:relV}];
+        } else {
+          set.x=.035*hs; set.y=d.headY+.18*hs; set.z=.065*hs;
+          s.keys.signature=[{t:0,p:start},{t:s.T*.19,p:P(dip)},{t:s.T*.51,p:set,hold:true},{t:s.T*.79,p:set.clone().add(V(0,.012,0)),hold:true},{t:s.T,p:release,vEnd:relV}];
+        }
+      }
     }
 
     // ball center in world at shot time t (assumes current root position/yaw)
@@ -151,6 +167,7 @@ const HoopPlayer = (() => {
       const a = hermitePath(s.keys.one, t, this.tmp.c);
       const b = hermitePath(s.keys.two, t, this.tmp.d);
       a.lerp(b, p.motion);
+      if (s.keys.signature) hermitePath(s.keys.signature,t,a);
       if (t > s.T) { // follow-through extrapolation (only matters for the hand)
         const k = Math.min(t - s.T, 0.12);
         a.y += Math.sin(s.keys.alpha) * 2.2 * k; a.z += Math.cos(s.keys.alpha) * 2.2 * k;
@@ -327,7 +344,7 @@ const HoopPlayer = (() => {
       if (s.t >= s.tTake && !s.tookOff) { s.tookOff = true; if (this.derived.jumpH > 0.06) this.emit('jump', {}); }
       if (s.t >= s.landT && !s.landed) { s.landed = true; this.emit('land', { v: s.v0 }); this.replantFeet(0); }
       if (!s.released) this.ballPos.copy(this.shotBallWorld(s.t, this.tmp.e));
-      if (s.released && s.t > Math.max(s.landT + 0.32, s.releaseT + 0.55)) {
+      if (s.released && s.t > Math.max(s.landT + 0.32, s.releaseT + (this.signature ? this.def.style.follow+.20 : .55))) {
         this.action = 'none'; this.shot = null;
         if (this.hasBall) this.holdT = 1;
       }
@@ -518,7 +535,7 @@ const HoopPlayer = (() => {
       if (s) {
         const prog = clamp(s.t / s.T, 0, 1.4);
         lean = lerp(0.12 + 0.06 * p.knee, 0.02 + p.lean * 0.2, smooth((s.t - s.tLoad) / (s.T - s.tLoad + 0.001)));
-        chestYawOff = -p.footStagger * 0.22 * (1 - prog * 0.3); // shooting shoulder turned slightly toward the rim
+        chestYawOff = (this.signature ? this.def.style.turn : -p.footStagger*.22)*(1-prog*.3);
       }
       sm.lean += (lean - sm.lean) * (1 - Math.exp(-10 * dt));
       sm.roll += (roll - sm.roll) * (1 - Math.exp(-12 * dt));
@@ -549,8 +566,9 @@ const HoopPlayer = (() => {
           // airborne: legs hang under the hips, toes pointed
           const hip = tm.c.copy(d.hipLocal[i]).multiplyScalar(sc).applyQuaternion(P.pelvisQ).add(P.pelvis);
           o.ankle.copy(hip).addScaledVector(u, -d.legLen * 0.93).addScaledVector(f, 0.05 * hs).addScaledVector(r, side * 0.02);
+          if (s && this.signature) { const sweep=this.def.style.feetSweep*Math.sin(clamp((s.t-s.tTake)/(s.landT-s.tTake),0,1)*Math.PI);o.ankle.addScaledVector(f,sweep*hs);o.ankle.y+=Math.abs(sweep)*.30; }
           // blend from takeoff (first 80 ms)
-          const tAir = s ? s.t - s.tTake : this.actionT;
+          const tAir = s ? s.t - s.tTake : this.action==='dunk'&&this.dunkState ? this.dunkState.t-.14 : this.actionT;
           if (tAir < 0.08) { const k = smooth(tAir / 0.08); o.ankle.lerpVectors(tm.d.set(ft.pos.x, d.ankleY + 0.06, ft.pos.z), o.ankle, k); }
           o.fwd.copy(f).addScaledVector(u, -0.5).normalize(); o.up.copy(u).addScaledVector(f, 0.4).normalize();
           ft.pos.set(o.ankle.x, 0, o.ankle.z); ft.yaw = yaw - side * 0.1;
@@ -592,7 +610,7 @@ const HoopPlayer = (() => {
         // palm normal (palm -> ball) turns from "under the ball" to the launch direction
         const nrm = V().copy(under).negate().lerp(shotDir, smooth(prog * 1.1)).normalize();
         const flickStart = T - 0.05 + (p.flick - 0.5) * 0.07;
-        const fk = smooth((t - flickStart) / 0.12);
+        const fk = smooth((t - flickStart) / (this.signature ? this.def.style.flickTime : .12));
         const cocked = V().copy(u).addScaledVector(nrm, -u.dot(nrm)).normalize().addScaledVector(f, -0.25).normalize();
         const goose = V().copy(f).multiplyScalar(0.55).addScaledVector(u, -0.8).normalize();
         const fing = V().copy(cocked).lerp(goose, fk).normalize();
@@ -602,7 +620,8 @@ const HoopPlayer = (() => {
           // follow-through: arm stays extended toward the rim, wrist goosenecked
           const relBall = this.shotBallWorld(Math.min(t, s.releaseT + 0.12), V());
           targets[0].copy(relBall).addScaledVector(nrm, -(BR + 0.012));
-          const hold = t - s.releaseT > 0.55 + 0.2 * p.flick ? smooth((t - s.releaseT - 0.55 - 0.2 * p.flick) / 0.3) : 0;
+          const follow=this.signature ? this.def.style.follow : .55+.2*p.flick;
+          const hold=t-s.releaseT>follow ? smooth((t-s.releaseT-follow)/.3) : 0;
           if (hold > 0) { const hang0 = V().copy(shoulders[0]).addScaledVector(u, -(d.armLen * 0.85)).addScaledVector(f, 0.15); targets[0].lerp(hang0, hold); }
           palms[0].copy(nrm).lerp(V(0, -1, 0), fk * 0.6).normalize(); fingers[0].copy(fing);
         }
@@ -617,14 +636,14 @@ const HoopPlayer = (() => {
           const anchor = this.shotBallWorld(Math.min(tOff, T), V()).addScaledVector(gdir, BR + 0.05).addScaledVector(r, -0.06);
           const k = smooth((t - tOff) / 0.12);
           targets[1].copy(anchor).addScaledVector(r, -0.06 * k).addScaledVector(u, -0.04 * k);
-          const drop = smooth((t - T - 0.5) / 0.35);
+          const drop = smooth((t - T - (this.signature?this.def.style.guideDrop:.5)) / .28);
           if (drop > 0) targets[1].lerp(V().copy(shoulders[1]).addScaledVector(u, -(d.armLen * 0.85)).addScaledVector(f, 0.1), drop);
           palms[1].copy(r); fingers[1].copy(u).addScaledVector(f, 0.2).normalize();
         }
         poles[1].copy(u).multiplyScalar(-0.8).addScaledVector(r, -0.9).normalize();
       } else if (this.hasBall) {
-        if (this.dribbling || this.action === 'cross') {
-          const di = this.action === 'cross' ? (this.actionT < this.mv.crossTime * 0.42 ? 1 - this.crossTo : this.crossTo) : this.dribbleHand;
+        if (this.dribbling || this.action === 'cross' || this.action === 'handle') {
+          const di=this.action === 'cross' ? (this.actionT<this.mv.crossTime*.42 ? 1-this.crossTo : this.crossTo) : this.action==='handle' ? (this.actionT<this.handleState.dur*.5 ? this.dribbleHand : this.handleState.to) : this.dribbleHand;
           const oi = 1 - di;
           const top = (this.mv.dribbleTop) * hs;
           // dribble hand rides the top of the ball near the hand, hovers when the ball is low
