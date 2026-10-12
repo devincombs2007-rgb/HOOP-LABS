@@ -1,0 +1,36 @@
+{
+  "units": "meters",
+  "type": "stylized prototypes",
+  "sources": {
+    "heights": "NBA.com player profiles"
+  },
+  "players": [
+    {
+      "id": "stephen_curry",
+      "name": "Stephen Curry",
+      "height_m": 1.8796,
+      "prototype_mesh_height_m": 1.8796,
+      "weight_kg_reference": 91,
+      "jersey_number": "30",
+      "file": "stephen_curry.glb"
+    },
+    {
+      "id": "lebron_james",
+      "name": "LeBron James",
+      "height_m": 2.0574,
+      "prototype_mesh_height_m": 2.0574,
+      "weight_kg_reference": 113,
+      "jersey_number": "23",
+      "file": "lebron_james.glb"
+    },
+    {
+      "id": "michael_jordan",
+      "name": "Michael Jordan",
+      "height_m": 1.9812,
+      "prototype_mesh_height_m": 1.9812,
+      "weight_kg_reference": 98,
+      "jersey_number": "23",
+      "file": "michael_jordan.glb"
+    }
+  ]
+}

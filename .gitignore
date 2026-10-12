@@ -1,0 +1,5 @@
+node_modules/
+src/assets.gen.js
+dist/
+tests/shots/*.png
+!tests/shots/sheet.png
