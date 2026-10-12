@@ -86,11 +86,12 @@ const HoopPlayer = (() => {
     hoopYaw() { const H = PH.HOOPS[this.targetHoop]; return Math.atan2(H.cx - this.x, H.cz - this.z); }
     distToHoop() { return PH.distToHoop(this.x, this.z, this.targetHoop); }
     busy() { return this.action !== 'none' && this.action !== 'catch'; }
-    canShoot() { return this.hasBall && (this.action === 'none' || this.action === 'catch' || this.action === 'stepback'); }
+    canShoot() { this.releaseIdleCombo(); return this.hasBall && (this.action === 'none' || this.action === 'catch' || this.action === 'stepback'); } // only startShot calls this; an auto idle move never blocks a shot
     emit(type, data) { this.events.push(Object.assign({ type }, data)); }
 
     // ------------------------------------------------------------------ actions
     startShot(now) {
+      this.releaseIdleCombo();
       if (!this.canShoot() || !this.jumper) return false;
       if (this.action === 'stepback') { this.queuedShot = now; return true; }
       const p = this.jumper, d = this.derived;
@@ -217,20 +218,28 @@ const HoopPlayer = (() => {
       return true;
     }
 
-    crossover() {
+    // a player-pressed move always cuts off an automatic idle dribble combo
+    releaseIdleCombo() {
+      if (this.idleCombo && (this.action === 'cross' || this.action === 'handle')) { this.action = 'none'; this.handleState = null; }
+      this.idleCombo = false;
+    }
+
+    crossover(inPlace) {
+      if (!inPlace) this.releaseIdleCombo();
       if (!this.hasBall || this.busy()) return false;
       this.action = 'cross'; this.actionT = 0;
       const to = 1 - this.dribbleHand;
       const r = this.right(this.yaw);
       const s = to === 0 ? 1 : -1;
-      this.vx += r.x * s * 2.0; this.vz += r.z * s * 2.0;
+      if (!inPlace) { this.vx += r.x * s * 2.0; this.vz += r.z * s * 2.0; } // idle combos stay in place
       this.crossFrom = this.ballPos.clone(); this.crossTo = to;
-      this.offBalance = Math.max(this.offBalance, 0.35);
+      this.offBalance = Math.max(this.offBalance, inPlace ? 0.1 : 0.35);
       this.emit('move', { name: 'crossover' });
       return true;
     }
 
     stepback() {
+      this.releaseIdleCombo();
       if (!this.hasBall || this.busy()) return false;
       this.action = 'stepback'; this.actionT = 0; this.dribbling = false;
       this.faceYaw = this.hoopYaw();
@@ -376,17 +385,29 @@ const HoopPlayer = (() => {
       }
       if (this.action === 'pickup') return; // game moves the ball
       if (this.action === 'catch') { this.holdT = 1; }
-      // dribble when moving; settle into a hold when standing
-      if (moving && !this.dribbling) { this.dribbling = true; this.dribblePhase = 0; }
+      // live dribble at all times (standing still too) — the ball is only gathered for a shot/finish
+      if (!this.dribbling && this.action !== 'catch') { this.dribbling = true; this.dribblePhase = 0.5; }
       const side = this.dribbleHand === 0 ? 1 : -1;
       if (this.dribbling) {
-        const hz = this.mv.dribbleHz * (1 + 0.18 * this.speed() / this.mv.sprint);
+        // dribble tempo follows movement: controlled when standing/walking, fast push dribble when sprinting
+        const sp = Math.min(1, this.speed() / this.mv.sprint);
+        const hz = this.mv.dribbleHz * (0.82 + 0.68 * sp);
         const prev = this.dribblePhase;
         this.dribblePhase += dt * hz;
         if (prev < 0.42 && this.dribblePhase >= 0.42) this.emit('dribble', { v: 4 + this.speed() * 0.3 });
-        if (this.dribblePhase >= 1) { this.dribblePhase -= 1; if (!moving) { this.dribbling = false; this.holdT = 0; } }
+        if (this.dribblePhase >= 1) this.dribblePhase -= 1;
+        // standing still: keep the handle alive with crossovers, between-the-legs and behind-the-back combos
+        if (!moving && this.action === 'none' && !this.shot) {
+          this.idleMoveT = (this.idleMoveT || 0) + dt;
+          if (this.idleNext === undefined) this.idleNext = 1.2 + Math.random() * 1.4;
+          if (this.idleMoveT > this.idleNext && this.dribblePhase > 0.85) {
+            const r = Math.random();
+            const done = r < 0.4 ? this.crossover(true) : (this.handle && this.handle(r < 0.7 ? 'between' : 'behind', true));
+            if (done) { this.idleCombo = true; this.idleMoveT = 0; this.idleNext = 1.1 + Math.random() * 1.6; }
+          }
+        } else this.idleMoveT = 0;
         const ph = this.dribblePhase;
-        const base = this.tmp.b.copy(root).addScaledVector(r, side * 0.27 * hs).addScaledVector(f, (0.42 + 0.03 * this.speed()) * hs);
+        const base = this.tmp.b.copy(root).addScaledVector(r, side * 0.27 * hs).addScaledVector(f, (0.3 + 0.045 * this.speed()) * hs);
         base.x += this.vx * 0.05; base.z += this.vz * 0.05;
         let y;
         if (ph < 0.42) y = top - (top - BR) * easeIn(ph / 0.42);

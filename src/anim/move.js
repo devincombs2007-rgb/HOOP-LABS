@@ -10,13 +10,15 @@ const HoopMove = (() => {
     const smooth=t=>{t=Math.max(0,Math.min(1,t));return t*t*(3-2*t);};
     const badge=(p,id)=>typeof HoopProfiles!=='undefined'?HoopProfiles.effect(p.def,id):0;
     P.jump=function(){if((this.jumpRecover||0)>0)return false;return jump.call(this);};
-    P.handle=function(kind='between') {
+    P.handle=function(kind='between',idle) {
+      if(!idle&&this.releaseIdleCombo)this.releaseIdleCombo();
       if(!this.hasBall || this.busy())return false;
       if(!['behind','between','hesitation'].includes(kind))return false;
       this.handleState={kind,dur:kind==='hesitation'?.66:.48,to:kind==='hesitation'?this.dribbleHand:1-this.dribbleHand,from:this.ballPos.clone(),bounced:false};
       this.stamina=Math.max(0,(this.stamina??100)-3*(1-badge(this,'handle')*.12));this.action='handle';this.actionT=0;this.dribbling=true;return true;
     };
     P.dunk=function() {
+      if(this.releaseIdleCombo)this.releaseIdleCombo();
       const H=HoopPhysics.HOOPS[this.targetHoop],dist=Math.hypot(H.cx-this.x,H.cz-this.z);
       if(!this.hasBall || this.busy() || dist>2.45 || dist<.18)return false;
       if(typeof HoopGame!=='undefined'&&HoopGame.G.match&&!HoopMatch.canDunk(HoopGame.G,this))return false;

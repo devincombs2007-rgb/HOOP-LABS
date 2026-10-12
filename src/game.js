@@ -303,6 +303,7 @@ const HoopGame = (() => {
     if (!pl || G.paused || G.replay || G.shotInput || pl.air || pl.action==='dunk') return;
     if (G.mode && G.mode.canShoot && !G.mode.canShoot()) { emit('toast', { text: G.mode.done ? 'Session complete' : 'Not yet', tone: 'info' }); return; }
     if (!pl.hasBall) { if (currentBallReturn() !== 'feed') callBall(); return; }
+    if (pl.releaseIdleCombo) pl.releaseIdleCombo(); // shooting cuts off an automatic idle dribble move
     // drills with a spot ring only take shots from the spot: walk the shooter back instead
     const sp = !G.match && G.mode && G.mode.requireSpot ? G.mode.spot : null;
     if (sp && Math.hypot(sp.x - pl.x, sp.z - pl.z) > SPOT_TOLERANCE) {
