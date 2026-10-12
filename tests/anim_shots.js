@@ -51,6 +51,7 @@ function pageHelper(FW, FH) {
     else out.copy(tmp.toe.y < tmp.heel.y ? tmp.toe : tmp.heel);
     return out;
   }
+  const where = (pl, what) => `${M.label} ${what} ${pl.action}${pl.shot ? ' s=' + pl.shot.t.toFixed(2) : ''} ex=${pl._shotExit ? 1 : 0} f${M.frames}`;
   AH.sample = (pl) => {
     M.frames++;
     const P = pl.pose, m = pl.model, d = pl.dims;
@@ -61,7 +62,7 @@ function pageHelper(FW, FH) {
       const planted = ft.planted && !ft.swinging && c.y < 0.06;
       if (planted && M.prevPlanted[i] && M.prevContact[i]) {
         const s = Math.hypot(c.x - M.prevContact[i].x, c.z - M.prevContact[i].z);
-        if (s > M.slideMax) { M.slideMax = s; M.slideWhere = `${M.label} foot${i} t=${pl.time.toFixed(2)}`; }
+        if (s > M.slideMax) { M.slideMax = s; M.slideWhere = where(pl, 'foot' + i); }
         M.slideSum += s; M.slideFrames++;
       }
       M.prevPlanted[i] = planted;
@@ -69,14 +70,14 @@ function pageHelper(FW, FH) {
       // leg reach
       const an = m.limbs[i].ankle.getWorldPosition(tmp.a);
       const fe = an.distanceTo(P.feet[i].ankle);
-      if (fe > M.footErrMax) { M.footErrMax = fe; M.footErrWhere = `${M.label} foot${i} ${pl.action} t=${pl.time.toFixed(2)}`; }
+      if (fe > M.footErrMax) { M.footErrMax = fe; M.footErrWhere = where(pl, 'foot' + i); }
       // knee direction: bend must point forward-ish (along the foot), never backward
       const hip = m.limbs[i].hip.getWorldPosition(tmp.b), knee = m.limbs[i].knee.getWorldPosition(tmp.d);
       const axis = tmp.e.subVectors(an, hip); const L = axis.length(); axis.divideScalar(L);
       const off = knee.clone().sub(hip); off.addScaledVector(axis, -off.dot(axis));
       const fw = P.feet[i].fwd;
       const bend = off.x * fw.x + off.z * fw.z;
-      if (bend < -0.01 && -bend > M.kneeInv) { M.kneeInv = -bend; M.kneeInvWhere = `${M.label} leg${i} ${pl.action} t=${pl.time.toFixed(2)}`; }
+      if (bend < -0.01 && -bend > M.kneeInv) { M.kneeInv = -bend; M.kneeInvWhere = where(pl, 'leg' + i); }
       const th = knee.clone().sub(hip).normalize(), sh = an.clone().sub(knee).normalize();
       const flex = Math.acos(Math.max(-1, Math.min(1, th.dot(sh)))) * 180 / Math.PI;
       if (pl.feet[i].planted && flex < M.minKneeFlex) M.minKneeFlex = flex;
@@ -87,12 +88,12 @@ function pageHelper(FW, FH) {
         const w = m.limbs[i].wrist.getWorldPosition(tmp.a);
         const he = w.distanceTo(P.hands[i].wrist);
         const onBall = pl.handsOnBall ? pl.handsOnBall[i] : (i === 0);
-        if (onBall && he > M.handErrMax) { M.handErrMax = he; M.handErrWhere = `${M.label} hand${i} ${pl.action} t=${pl.time.toFixed(2)}`; }
+        if (onBall && he > M.handErrMax) { M.handErrMax = he; M.handErrWhere = where(pl, 'hand' + i); }
         if (onBall) {
           // palm center = wrist + fingers * palm
           const pc = tmp.b.copy(w).addScaledVector(P.hands[i].fingers, d.palm);
           const gap = pc.distanceTo(pl.ballPos) - K.BALL_R;
-          if (gap > M.ballGapMax) { M.ballGapMax = gap; M.ballGapWhere = `${M.label} hand${i} ${pl.action} t=${pl.time.toFixed(2)}`; }
+          if (gap > M.ballGapMax) { M.ballGapMax = gap; M.ballGapWhere = where(pl, 'hand' + i); }
         }
       }
     }
@@ -116,6 +117,7 @@ function pageHelper(FW, FH) {
       m.visible = e.active;
       if (!e.active) continue;
       if (e.state === 'held') m.position.copy(pl.ballPos); else m.position.set(e.b.px, e.b.py, e.b.pz);
+      if (e.state !== 'held' && Math.hypot(m.position.x - pl.x, m.position.z - pl.z) > 2.5) m.visible = false; // stray balls (rebounds) would block the camera
     }
   }
   AH.cam = (view, opt = {}) => {
@@ -129,7 +131,7 @@ function pageHelper(FW, FH) {
     else if (view === 'back') dir = f.clone().negate();
     else if (view === 'left') dir = r.clone().negate();
     else dir = r.clone().multiplyScalar(0.7).add(f.clone().multiplyScalar(0.7)).normalize(); // 3/4
-    CAM.fov = opt.fov || 28; CAM.aspect = FW / FH; CAM.updateProjectionMatrix();
+    CAM.fov = opt.fov || 24; CAM.aspect = FW / FH; CAM.updateProjectionMatrix();
     CAM.position.set(cx + dir.x * dist, h, cz + dir.z * dist);
     CAM.lookAt(cx, ly, cz);
   };
@@ -152,9 +154,10 @@ function pageHelper(FW, FH) {
     HOOP.select(id);
     const pl = G.player;
     HOOP.place(x !== undefined ? x : K.HOOP_X - 6.6, z || 0);
-    if (!pl.hasBall) HOOP.giveBall();
+    for (let k = 0; k < 40 && !pl.hasBall; k++) { HOOP.giveBall(); if (!pl.hasBall) AH.run(0.1); }
     pl.action = 'none'; pl.dribbling = false;
     AH.run(0.8);
+    if (!pl.hasBall) throw new Error('setup: no ball for ' + id);
     return pl;
   };
   // jump shot strip: side row + front row, phases from the shot timeline
@@ -201,6 +204,7 @@ function pageHelper(FW, FH) {
       const pl = AH.setup(id);
       HOOP.shoot(0);
       const s = pl.shot;
+      if (!s) throw new Error('compare: shot did not start for ' + id + ' action=' + pl.action);
       const at = { load: s.tLoad, takeoff: s.tTake, set: s.tSet !== undefined ? s.tSet : (s.tTake + s.T) / 2, release: s.T, follow: s.T + 0.25, land: s.landT + 0.05 };
       const x0 = pl.x, z0 = pl.z, yaw0 = pl.yaw;
       let k = 0, guard = 0;
