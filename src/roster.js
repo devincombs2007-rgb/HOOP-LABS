@@ -53,9 +53,16 @@ const HoopRoster = (() => {
       blurb: 'Lightning one-motion release from anywhere. Tight, low handle and the best shooting on the move.',
       move: { walk: 1.5, jog: 4.0, sprint: 7.3, accel: 11.0, decel: 13.5, turn: 12.0, dribbleHz: 2.7, dribbleTop: 0.78, stepback: 1.05, maxLeap: 0.66, crossTime: 0.30 },
       shoot: { baseRange: 10.2, kMul: 0.86, kMulMid: 0.86, moveComp: 0.94, releaseMul: 0.92, heave: 1.05 },
-      sig: { id: 'sig', name: 'Signature: Stephen Curry', params: P({ pocket: .48, dip: .22, motion: 0, setPoint: .58, extension: .42, speed: .95, arc: .62, elbow: .1, guide: .18, flick: .66, knee: .56, jump: .32, releaseTiming: .28, footWidth: .44, footStagger: .28, lean: .04 }) },
+      sig: { id: 'sig', name: 'Signature: Stephen Curry', params: P({ pocket: .36, dip: .22, motion: 0, setPoint: .3, extension: .42, speed: .95, arc: .62, elbow: .1, guide: .18, flick: .66, knee: .56, jump: .32, releaseTiming: .24, footWidth: .44, footStagger: .26, lean: .04 }) },
       attrs: { Range: 97, Release: 98, 'Shot IQ on the move': 96, Strength: 62, Speed: 86, Elevation: 70 },
-      style: { shot: 'continuous', turn: -.12, guideOff: .80, guideDrop:.10,flickTime:.08,follow: .55, feetSweep: .16, dunk: 'onehand', dribble: 'compact' },
+      // Signature animation modifiers (src/anim/shot.js DEFAULT_STYLE documents every key).
+      // Quick hop into a one-motion shot that rises straight up the middle to a set point over the right eye,
+      // slight inward knee dip, released on the way up, relaxed high follow-through with the fingers at the rim.
+      style: { shot: 'continuous', dunk: 'onehand', dribble: 'compact',
+        gather: { stand: 'hop', catch: 'hop', move: '12' }, gatherQuick: 1.3, hopH: .035, kneeIn: .55, pathLine: 1, pocketR: -.03,
+        setR: .035, setU: 0, setF: 0, relR: .07, relElev: -3, pause: 0, elbowOut: 0, closed: .08, squareTime: .14,
+        tuck: .12, together: .15, kick: 0, fadeMul: .6, drift: .10, landWide: .02, landFwd: .07,
+        followHold: .8, wristHang: .15, followRelax: .45, guideStay: .3, guideOut: .07 },
     },
     {
       id: 'lebron', file: 'lebron_james.glb', name: 'LeBron James', short: 'LeBron', plate: 'JAMES', number: '23',
@@ -64,9 +71,15 @@ const HoopRoster = (() => {
       blurb: 'Huge frame and top-end speed. Set point in front of the face, strong two-foot base, power step-back.',
       move: { walk: 1.6, jog: 4.3, sprint: 8.1, accel: 8.4, decel: 9.8, turn: 8.5, dribbleHz: 2.1, dribbleTop: 0.82, stepback: 1.2, maxLeap: 0.8, crossTime: 0.36 },
       shoot: { baseRange: 9.4, kMul: 1.02, kMulMid: 1.0, moveComp: 0.84, releaseMul: 1.06, heave: 1.3 },
-      sig: { id: 'sig', name: 'Signature: LeBron James', params: P({ pocket: .58, dip: .2, motion: .45, setPoint: .7, extension: .4, speed: .55, arc: .45, elbow: .22, guide: .3, flick: .58, knee: .45, jump: .38, releaseTiming: .62, footWidth: .7, footStagger: .35, lean: -.02 }) },
+      sig: { id: 'sig', name: 'Signature: LeBron James', params: P({ pocket: .6, dip: .18, motion: .55, setPoint: .7, extension: .5, speed: .55, arc: .45, elbow: .25, guide: .3, flick: .58, knee: .45, jump: .38, releaseTiming: .78, footWidth: .78, footStagger: .3, lean: -.04 }) },
       attrs: { Range: 84, Release: 80, 'Shot IQ on the move': 82, Strength: 98, Speed: 92, Elevation: 88 },
-      style: { shot: 'power', turn: -.26, guideOff: .91, guideDrop:.24,flickTime:.13,follow: .38, feetSweep: -.04, dunk: 'twohand', dribble: 'power' },
+      // Wide strong base and a 1-2 plant, ball carried up in front of the face to a high set point with a
+      // slight two-motion pause and the elbow a little out; releases near the top, kicks a leg out and fades on deep shots.
+      style: { shot: 'power', dunk: 'twohand', dribble: 'power',
+        gather: { stand: 'set', catch: '12', move: '12' }, gatherQuick: .9, kneeIn: 0, loadMul: 1.05, pathLine: .8, pocketR: 0,
+        setR: .0, setU: -.03, setF: .07, relR: .06, relElev: -4, pause: .07, elbowOut: .35, closed: .05, squareTime: .2,
+        tuck: .08, together: 0, kick: 1, kickLeg: 0, kickDist: 6.6, fadeMul: .9, drift: 0, landWide: .12, landFwd: .04,
+        followHold: .45, wristHang: .55, followRelax: .3, guideStay: .2, guideOut: .05 },
     },
     {
       id: 'jordan', file: 'michael_jordan.glb', name: 'Michael Jordan', short: 'Jordan', plate: 'JORDAN', number: '23',
@@ -75,9 +88,15 @@ const HoopRoster = (() => {
       blurb: 'Explosive leaper with a high release at the apex. Lethal midrange fadeaway, sharp footwork.',
       move: { walk: 1.6, jog: 4.2, sprint: 7.9, accel: 10.2, decel: 12.8, turn: 10.5, dribbleHz: 2.35, dribbleTop: 0.8, stepback: 0.95, maxLeap: 0.95, crossTime: 0.32 },
       shoot: { baseRange: 8.6, kMul: 0.98, kMulMid: 0.74, moveComp: 0.89, releaseMul: 1.0, heave: 1.1 },
-      sig: { id: 'sig', name: 'Signature: Michael Jordan', params: P({ pocket: .62, dip: .25, motion: .55, setPoint: .9, extension: .3, speed: .62, arc: .5, elbow: .08, guide: .2, flick: .78, knee: .5, jump: .78, releaseTiming: .95, footWidth: .45, footStagger: .38, lean: -.18 }) },
+      sig: { id: 'sig', name: 'Signature: Michael Jordan', params: P({ pocket: .66, dip: .2, motion: .55, setPoint: .92, extension: .28, speed: .62, arc: .5, elbow: .08, guide: .2, flick: .8, knee: .55, jump: .74, releaseTiming: .96, footWidth: .36, footStagger: .36, lean: -.22 }) },
       attrs: { Range: 78, Release: 90, 'Shot IQ on the move': 88, Strength: 80, Speed: 90, Elevation: 99 },
-      style: { shot: 'apex', turn: -.32, guideOff: .88, guideDrop:.38,flickTime:.11,follow: .75, feetSweep: -.20, dunk: 'tomahawk', dribble: 'wing' },
+      // Explosive vertical jump with the legs together and tucked, shoulders turned then squared quickly,
+      // ball carried high to a classic set point above the head, released at the apex, strong fade, held limp-wrist follow-through.
+      style: { shot: 'apex', dunk: 'tomahawk', dribble: 'wing',
+        gather: { stand: 'set', catch: 'hop', move: 'hop' }, gatherQuick: 1.1, hopH: .03, kneeIn: 0, loadMul: 1.1, pathLine: .55, pocketR: .02,
+        setR: .07, setU: .02, setF: -.02, relR: .11, relElev: 4, pause: .03, elbowOut: 0, closed: -.38, squareTime: .09,
+        tuck: .55, together: .75, kick: 0, fadeMul: 1.5, fadeMid: .5, drift: 0, landWide: 0, landFwd: .08,
+        followHold: .95, wristHang: .9, followRelax: .15, guideStay: .35, guideOut: .06 },
     },
   ];
 
