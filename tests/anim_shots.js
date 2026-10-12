@@ -20,7 +20,7 @@ let pass = 0, fail = 0;
 const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  — ' + info : ''}`); ok ? pass++ : fail++; };
 
 // ---------------------------------------------------------------- in-page helper
-function pageHelper() {
+function pageHelper(FW, FH) {
   const G = HOOP.G, K = HoopPhysics.K, R = G.renderer, CAM = G.camera;
   const FR = 1 / 60, TICK = K.FIXED_DT;
   const V = () => new THREE.Vector3();
@@ -321,7 +321,7 @@ function pageHelper() {
   await page.goto('file://' + path.join(ROOT, 'index.html'));
   await page.waitForFunction(() => window.HOOP && window.HOOP.G.ready, null, { timeout: 120000 });
   await page.evaluate(() => HOOP.setSetting('quality', 'medium'));
-  await page.evaluate(`window.AH = (${pageHelper.toString()})()`);
+  await page.evaluate(`window.AH = (${pageHelper.toString()})(${FW}, ${FH})`);
   const save = async (name) => {
     const url = await page.evaluate(() => AH.sheetData());
     const file = path.join(OUT, name);
