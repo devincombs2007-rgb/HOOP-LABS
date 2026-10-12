@@ -193,6 +193,7 @@ const HoopGame = (() => {
     const sess = HoopStats.aggregate(HoopStats.filter(G.store, 'session'));
     G.W.updateBoard(`${sess.made} / ${sess.att}`, tr.made ? resultLabel(tr) : 'Miss', `${HoopModes.ft(tr.dist)} · ${tr.label}`);
     emit('shotResult', tr);
+    if (made && HoopInput.rumble) HoopInput.rumble(0.35, 110);
     if (G.mode && G.mode.onResult) handleModeEvents(G.mode.onResult({ made, dist: tr.dist, eMs: tr.eMs, three: tr.three, result: tr.result }, tr) || []);
     // rebounder: return this ball after it drops
     const ret = currentBallReturn();
@@ -302,6 +303,7 @@ const HoopGame = (() => {
     const tr = startTracker(e, rel, info, plan);
     if (G.W.releaseMarker) { G.W.releaseMarker.position.copy(info.pos); G.W.releaseMarker.visible = G.settings.trail; }
     if (HoopAudio.ready && M.green) HoopAudio.S.ui('perfect');
+    if (HoopInput.rumble) HoopInput.rumble(M.green ? 0.45 : 0.25, M.green ? 90 : 60);
     emit('release', { tr, rel, grade: M.grade, eMs: M.eMs, green: M.green });
     if (currentBallReturn() === 'rapid') G.rapidAt = G.now + 0.5;
   }
@@ -555,6 +557,7 @@ const HoopGame = (() => {
     r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
     r.domElement.id = 'view';
     if (HoopWorld.configureRenderer) HoopWorld.configureRenderer(r, G.settings.quality);
+    if (typeof HoopRender !== 'undefined' && HoopRender.init) HoopRender.init(r, G.settings);
     canvasHost.appendChild(r.domElement);
     r.domElement.addEventListener('webglcontextlost', (ev) => { ev.preventDefault(); G.contextLost = true; setPaused(true); emit('contextLost'); });
     r.domElement.addEventListener('webglcontextrestored', () => { G.contextLost = false; applyQuality(G.settings.quality, true); emit('contextRestored'); });
@@ -568,6 +571,7 @@ const HoopGame = (() => {
     G.renderer.setSize(w, h);
     G.camera.aspect = w / h; G.camera.updateProjectionMatrix();
     if (G.W && G.W.reflect) { const s = G.renderer.getDrawingBufferSize(new THREE.Vector2()); G.W.reflect.resize(s.x, s.y); }
+    if (typeof HoopRender !== 'undefined' && HoopRender.resize) HoopRender.resize(w, h, G.renderer);
   }
   function attachToWorld() {
     const sc = G.W.scene;
@@ -580,6 +584,7 @@ const HoopGame = (() => {
     const Q = HoopWorld.QUALITY[q];
     G.renderer.shadowMap.enabled = Q.shadows;
     if (HoopWorld.configureRenderer) HoopWorld.configureRenderer(G.renderer, q);
+    if (typeof HoopRender !== 'undefined' && HoopRender.setQuality) HoopRender.setQuality(q, G.renderer);
     if (G.W) disposeWorld(G.W);
     resize();
     G.W = HoopWorld.build(G.renderer, q);
@@ -667,6 +672,7 @@ const HoopGame = (() => {
     } else {
       pl.computePose(dt);
       HoopCharacters.applyPose(pl.model, pl.pose);
+      if (HoopCharacters.update) HoopCharacters.update(pl.model, dt, pl.pose);
       syncVisuals(alpha);
       recordFrame();
     }
@@ -679,7 +685,9 @@ const HoopGame = (() => {
     G.rig.update({ px, py: 0, pz, hoop: G.replay ? G.replay.clip.shot.hoop : pl.targetHoop, shooting: !!pl.shot, aligning: G.settings.autoAlign && pl.hasBall && pl.speed() < 0.3, ball, dt, now: G.now });
     if (G.W.update) G.W.update(dt, G.camera, G);
     if (G.W.reflect) G.W.reflect.render(G.renderer, G.W.scene, G.camera, [G.W.trail, G.W.guide, G.W.spotRing]);
-    G.renderer.render(G.W.scene, G.camera);
+    if (typeof HoopRender !== 'undefined' && HoopRender.render) HoopRender.render(G.renderer, G.W.scene, G.camera, dt, G);
+    else G.renderer.render(G.W.scene, G.camera);
+    if (typeof HoopPerf !== 'undefined' && HoopPerf.frame) HoopPerf.frame(dt, G);
     if (typeof HoopUI !== 'undefined' && HoopUI.frame) HoopUI.frame(dt);
   }
 
@@ -757,6 +765,8 @@ const HoopGame = (() => {
     selectCharacter((saved && saved.character) || opts.character || RO.CHARACTERS[0].id);
     startMode('free');
     HoopInput.attach(G.renderer.domElement);
+    if (HoopAudio.attach) HoopAudio.attach(HoopGame);
+    if (typeof HoopPerf !== 'undefined' && HoopPerf.attach) HoopPerf.attach(HoopGame);
     HoopAudio.setVolumes(G.settings.master, G.settings.sfx, G.settings.amb);
     HoopAudio.setMuted(G.settings.muted);
     const unlock = () => { if (HoopAudio.init()) { HoopAudio.setVolumes(G.settings.master, G.settings.sfx, G.settings.amb); HoopAudio.setMuted(G.settings.muted); HoopAudio.resume(); } };

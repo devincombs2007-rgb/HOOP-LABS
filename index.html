@@ -7,6 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Big+Shoulders+Display:wght@600;700;800;900&display=swap">
 <link rel="stylesheet" href="src/style.css">
+<link rel="stylesheet" href="src/ui/jsc.css">
+<link rel="stylesheet" href="src/ui/stats.css">
 </head>
 <body class="in-menu">
 <div id="app"></div>
@@ -38,11 +40,16 @@
       <label>Mode <select id="mode-select"></select></label>
       <label>Difficulty <select id="set-diff"><option value="casual">Casual</option><option value="pro">Pro</option><option value="sim">Simulation</option></select></label>
       <label>Graphics <select id="set-quality"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="ultra">Ultra</option></select></label>
+      <button id="btn-jsc">Jump Shot Creator</button>
+      <button id="btn-stats">Stats</button>
       <button id="btn-play" class="primary">Play</button>
     </div>
     <div id="mode-desc" class="dim"></div>
   </div>
 </div>
+
+<div id="jsc" class="overlay screen hidden"></div>
+<div id="stats" class="overlay screen hidden"></div>
 
 <div id="pause" class="overlay hidden">
   <div class="card"><h2>Paused</h2><button id="btn-resume" class="primary">Resume</button><button id="btn-menu">Main menu</button></div>
@@ -70,13 +77,22 @@
 <script src="src/stats.js"></script>
 <script src="src/modes.js"></script>
 <script src="src/assets.gen.js"></script>
+<script src="src/gfx/materials.js"></script>
+<script src="src/models/head.js"></script>
+<script src="src/rig.js"></script>
 <script src="src/characters3d.js"></script>
 <script src="src/anim.js"></script>
+<script src="src/anim/move.js"></script>
+<script src="src/gfx/lighting.js"></script>
 <script src="src/world.js"></script>
+<script src="src/gfx/render.js"></script>
 <script src="src/audio.js"></script>
 <script src="src/input.js"></script>
 <script src="src/camera.js"></script>
 <script src="src/replay.js"></script>
+<script src="src/perf.js"></script>
+<script src="src/ui/jsc.js"></script>
+<script src="src/ui/stats.js"></script>
 <script src="src/ui.js"></script>
 <script src="src/game.js"></script>
 <script>
