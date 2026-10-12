@@ -56,6 +56,7 @@ const HoopModes = (() => {
   const ft = (m) => { const inches = Math.round(m / 0.0254); return `${Math.floor(inches / 12)}′${inches % 12}″`; };
   const pct = (a, b) => b ? Math.round(100 * a / b) : 0;
   const toast = (text, tone = 'info') => ({ type: 'toast', text, tone });
+  const NONE = Object.freeze([]);   // update() runs every tick: no allocation when nothing happens
   const choice = (v, opts, def) => opts.includes(v) ? v : def;
   const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
   function spread(vals) {
@@ -148,7 +149,7 @@ const HoopModes = (() => {
 
     if (id === 'free' || id === 'one' || id === 'watch') {
       return ({ ...base, ballReturn: id === 'free' ? null : 'manual',
-        canShoot() { return true; }, onRelease() { return []; }, onResult() { return []; }, update() { return []; },
+        canShoot() { return true; }, onRelease() { return []; }, onResult() { return []; }, update() { return NONE; },
         end() { return []; }, hud() { return null; }, summary() { return null; },
       });
     }
@@ -178,7 +179,7 @@ const HoopModes = (() => {
           if (this.resolved >= count) return ev.concat(this.finish());
           return ev;
         },
-        update() { return []; },
+        update() { return NONE; },
         finish() {
           if (this.done) return [];
           this.done = true;
@@ -221,7 +222,7 @@ const HoopModes = (() => {
           if (this.resolved >= seq.length) return this.finish();
           return [];
         },
-        update(dt) { if (this.started && !this.done) this.elapsed += dt; return []; },
+        update(dt) { if (this.started && !this.done) this.elapsed += dt; return NONE; },
         finish() {
           if (this.done) return [];
           this.done = true;
@@ -237,7 +238,7 @@ const HoopModes = (() => {
         },
         hud() {
           const cur = this.spot, ps = this.perSpot[cur.id];
-          return { title: `Spot-Up · ${range === 'three' ? 'Three' : 'Midrange'}`, main: `${this.made}/${this.resolved}`, sub: `${cur.label} · ${ps.att + (this.released > this.resolved && seq[this.released - 1] === cur ? 0 : 0)}/${per}`, elapsed: this.elapsed, progress: this.released / seq.length, pips: { n: 5, i: ids.indexOf(cur.id) } };
+          return { title: `Spot-Up · ${range === 'three' ? 'Three' : 'Midrange'}`, main: `${this.made}/${this.resolved}`, sub: `${cur.label} · shot ${Math.min(per, this.released - seq.indexOf(cur) + 1)} of ${per}`, elapsed: this.elapsed, progress: this.released / seq.length, pips: { n: 5, i: ids.indexOf(cur.id) } };
         },
         summary() { return { made: this.made, total: seq.length, time: this.elapsed }; },
       });
@@ -275,7 +276,7 @@ const HoopModes = (() => {
           if (this.resolved >= seq.length) return ev.concat(this.finish());
           return ev;
         },
-        update() { return []; },
+        update() { return NONE; },
         finish() {
           if (this.done) return [];
           this.done = true;
@@ -322,7 +323,7 @@ const HoopModes = (() => {
           if (this.resolved >= N) return ev.concat(this.finish());
           return ev;
         },
-        update() { return []; },
+        update() { return NONE; },
         finish() {
           if (this.done) return [];
           this.done = true;
@@ -388,7 +389,7 @@ const HoopModes = (() => {
           return ev;
         },
         update(dt) {
-          if (this.timer === null || !this.started || this.done || this.buzzer) return [];
+          if (this.timer === null || !this.started || this.done || this.buzzer) return NONE;
           this.timer = Math.max(0, this.timer - dt);
           if (this.timer === 0) {
             this.buzzer = true;
@@ -396,7 +397,7 @@ const HoopModes = (() => {
             if (this.resolved >= this.released) ev.push(...this.finish());
             return ev;
           }
-          return [];
+          return NONE;
         },
         finish() {
           if (this.done) return [];
@@ -426,7 +427,12 @@ const HoopModes = (() => {
       const start = 7.4;
       return ({ ...base,
         ballReturn: 'rapid', requireSpot: true, lockHoop: 0, dist: start, strikes: 0, makes: 0, longest: 0, idx: 0, pendingShot: false, shots: 0,
-        get spot() { const a = angles[this.idx % angles.length]; const s = spotAt('deep', `${ft(this.dist)} out`, this.dist, a); s.dist = this.dist; return s; },
+        _spot: null, _spotKey: '',
+        get spot() {
+          const key = this.idx + ':' + this.dist;
+          if (this._spotKey !== key) { const s = spotAt('deep', `${ft(this.dist)} out`, this.dist, angles[this.idx % angles.length]); s.dist = this.dist; this._spot = s; this._spotKey = key; }
+          return this._spot;
+        },
         canShoot() { return !this.pendingShot && !this.done; },
         onRelease(shot) { if (this.pendingShot) return []; this.pendingShot = true; shot.counted = true; this.shots++; shot.clutch = shot.dist > (rec.deep || 0) + 0.05 && shot.dist > 8.5; return []; },
         onResult(r, shot) {
@@ -442,7 +448,7 @@ const HoopModes = (() => {
           if (this.strikes >= 3) return this.finish();
           return [toast(`Strike ${this.strikes}`, 'bad')];
         },
-        update() { return []; },
+        update() { return NONE; },
         finish() {
           if (this.done) return [];
           this.done = true;
@@ -476,7 +482,7 @@ const HoopModes = (() => {
           ev.push({ type: 'moveTo', spot: this.spot });
           return ev;
         },
-        update() { return []; },
+        update() { return NONE; },
         finish() {
           if (this.done) return [];
           this.done = true;
@@ -520,7 +526,7 @@ const HoopModes = (() => {
           }
           return [toast(`Spot ${this.idx + 1}: ${this.spot.label}`, 'good'), { type: 'moveTo', spot: this.spot }];
         },
-        update() { return []; },
+        update() { return NONE; },
         finish() {
           if (this.done) return [];
           this.done = true;
@@ -558,7 +564,7 @@ const HoopModes = (() => {
           const ended = this.streak; this.streak = 0; this.runs++;
           return [toast(ended ? `Streak over at ${ended}` : 'Miss', 'bad')];
         },
-        update() { return []; },
+        update() { return NONE; },
         finish() {
           if (this.done) return [];
           this.done = true;
@@ -598,7 +604,7 @@ const HoopModes = (() => {
           if (this.resolved >= seq.length) return this.finish();
           return [];
         },
-        update() { return []; },
+        update() { return NONE; },
         finish() {
           if (this.done) return [];
           this.done = true;

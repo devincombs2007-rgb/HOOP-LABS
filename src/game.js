@@ -18,7 +18,11 @@ const HoopGame = (() => {
     quality: navigator.maxTouchPoints > 0 ? 'low' : 'high', resScale: 1, difficulty: 'casual', variance: 'low', ballReturn: 'rebounder',
     meter: true, guide: false, trail: false, hud: true, camMode: 'game', camSens: 1, camDist: 4.6, fov: 55,
     invertY: false, pointerLock: false, master: 0.8, sfx: 0.9, amb: 0.45, muted: false, autoAlign: true,
+    camHeight: 0.35, camSmooth: 0.5, autoReplay: true, replaySpeed: 0.5, replayAngle: 'side', rumble: true, deadzone: 0.15,
+    showFps: false, hints: true,
   };
+  const MOVE_WINDOW = 1.5;          // a pull-up within this many seconds of a dribble move counts as "off the move"
+  const SPOT_TOLERANCE = 1.25;      // drills with a spot ring: shots only from within this radius
 
   // ---------------------------------------------------------------- state
   const G = {
@@ -28,7 +32,14 @@ const HoopGame = (() => {
     mode: null, meter: { active: false, fill: 0, lo: null, hi: null, T: 0, max: 1, eMs: null, grade: null, green: false },
     shotInput: null, pendingMove: null, replay: null, recorder: null, rng: SH.makeRng(0x5EED1),
     listeners: {}, autoTick: true, perf: { tickMs: 0, renderMs: 0, frameMs: 16.7 },
+    view: 'play', highlights: [], lastMove: { name: null, t: -9 }, lastCatchT: -9, routine: null, feedWait: -1,
+    autoReplay: null, autoReplayPending: false,
   };
+  // scratch objects reused every tick (no per-tick allocations in the hot loop)
+  const _near = [], _nearPool = [];
+  for (let i = 0; i < 8; i++) _nearPool.push({ x: 0, y: 0, z: 0 });
+  const _replayBalls = [], _rbPrev = { x: 0, y: 0, z: 0, ok: false };
+  const anyBall = (st) => { for (const e of G.balls) if (e.active && e.state === st) return true; return false; };
 
   function on(evt, fn) { (G.listeners[evt] || (G.listeners[evt] = [])).push(fn); }
   function emit(evt, data) { const l = G.listeners[evt]; if (l) for (const fn of l) { try { fn(data); } catch (e) { console.error(e); } } }
@@ -74,7 +85,10 @@ const HoopGame = (() => {
     e.state = 'held'; e.b.held = true; e.pass = null; G.held = e;
     pl.reaching = false; pl.reachTarget = null;
     pl.giveBall(G.now, how);
+    G.lastCatchT = G.now;
+    G.routine = G.mode && G.mode.routine && !G.match ? { left: G.mode.routine, done: false, t: 0 } : null;
     if (HoopAudio.ready) HoopAudio.S.catchBall(panOf(pl.ballPos));
+    emit('catch', { how, ball: e.i });
   }
 
   // kinematic pass (rebounder / rack / called ball) to the player's hands
@@ -85,7 +99,9 @@ const HoopGame = (() => {
     const d = from.distanceTo(to);
     e.pass = { from: from.clone(), t: -delay, dur: clamp(0.32 + d / 11, 0.4, 1.25), h: 0.12 + d * 0.05 };
     e.b.px = from.x; e.b.py = from.y; e.b.pz = from.z;
+    e.cur.set(from.x, from.y, from.z); e.prev.copy(e.cur);
     pl.reaching = false;
+    emit('pass', { from: { x: from.x, y: from.y, z: from.z }, dur: e.pass.dur, ball: e.i });
   }
   function handTarget(out) {
     const pl = G.player, f = pl.fwd(pl.yaw), r = pl.right(pl.yaw);
@@ -126,6 +142,7 @@ const HoopGame = (() => {
       } else if (kind === 'floor') {
         resolveShot(tr, false, x, z);
       } else tr.otherHit = kind;
+      if ((kind === 'rim' || kind === 'neck' || kind === 'board') && tr.contacts.length < 6) tr.contacts.push({ t: G.now, kind, x, y, z, v });
     }
     contactSound(e, kind, x, y, z, v);
   }
@@ -155,6 +172,10 @@ const HoopGame = (() => {
       dx: plan.dx, dz: plan.dz, rimHits: 0, lastRimT: -9, boardHit: false, boardBeforeRim: false, firstRim: null, firstContact: null,
       cross: null, apex: info.pos.y, resolved: false, made: false, result: null, missType: null, path: [], char: G.def.id,
       jumper: G.jumpers[G.def.id] ? G.jumpers[G.def.id].presetId : 'sig', startT: s ? s.start : G.now,
+      contacts: [], mode: G.mode ? G.mode.id : 'free', counted: false, clutch: false,
+      catchDelay: s ? s.start - G.lastCatchT : 9,
+      afterMove: s && s.start - G.lastMove.t <= MOVE_WINDOW ? G.lastMove.name : null,
+      routine: !!(G.routine && G.routine.done),
     };
     tr.path.push(info.pos.x, info.pos.y, info.pos.z);
     e.shot = tr;
@@ -190,13 +211,23 @@ const HoopGame = (() => {
       made, result: tr.result, missType: tr.missType, entryAngle: tr.entryAngle, eMs: tr.eMs, grade: tr.grade,
       relAngle: tr.relAngle, relSpeed: tr.relSpeed, spinRps: tr.spinRps, apex: tr.apex, catchShoot: tr.catchShoot,
       pullUp: tr.pullUp, moving: tr.moving, difficulty: G.settings.difficulty,
+      mode: tr.mode, afterMove: tr.afterMove, catchDelay: tr.catchDelay, releaseH: tr.releaseH, green: tr.green,
     });
     tr.record = rec;
     const sess = HoopStats.aggregate(HoopStats.filter(G.store, 'session'));
     G.W.updateBoard(`${sess.made} / ${sess.att}`, tr.made ? resultLabel(tr) : 'Miss', `${HoopModes.ft(tr.dist)} · ${tr.label}`);
     emit('shotResult', tr);
     if (made && HoopInput.rumble) HoopInput.rumble(0.35, 110);
-    if (G.mode && G.mode.onResult) handleModeEvents(G.mode.onResult({ made, dist: tr.dist, eMs: tr.eMs, three: tr.three, result: tr.result }, tr) || []);
+    const mevs = G.mode && G.mode.onResult ? G.mode.onResult({ made, dist: tr.dist, eMs: tr.eMs, three: tr.three, result: tr.result, missType: tr.missType,
+      green: tr.green, catchShoot: tr.catchShoot, afterMove: tr.afterMove, routine: tr.routine }, tr) || [] : [];
+    for (const ev of mevs) if (ev.type === 'clutch') { tr.clutch = true; tr.clutchText = ev.text; }
+    // highlight-worthy: deep swishes, or a clutch make flagged by the mode (decided before 'modeDone' fires
+    // so the UI can hold the results card until the automatic replay has played)
+    if (made && !tr.dunk && ((tr.result === 'swish' && tr.dist >= 8.53) || tr.clutch)) {
+      emit('highlight', { shot: tr, reason: tr.clutch ? (tr.clutchText || 'Clutch') : 'Deep swish' });
+      if (G.settings.autoReplay && !G.match && G.autoTick) { G.autoReplay = { shot: tr, at: G.now + 1.25 }; G.autoReplayPending = true; }
+    }
+    handleModeEvents(mevs);
     // rebounder: return this ball after it drops
     const ret = currentBallReturn();
     if (ret === 'rebounder') tr.returnAt = G.now + (made ? 0.55 : 0.8);
@@ -211,18 +242,29 @@ const HoopGame = (() => {
       if (ev.type === 'toast') emit('toast', ev);
       else if (ev.type === 'moveTo') G.pendingMove = { spot: ev.spot, at: G.now + (ev.delay == null ? 0.9 : ev.delay) };
       else if (ev.type === 'buzzer') { if (HoopAudio.ready) HoopAudio.S.ui('buzzer'); emit('buzzer', ev); }
-      else if (ev.type === 'done') { if (HoopAudio.ready) HoopAudio.S.ui(ev.newBest ? 'best' : 'confirm'); emit('modeDone', ev); saveSoon(); }
+      else if (ev.type === 'done') { ev.mode = ev.mode || (G.mode && G.mode.id); ev.cfg = G.mode && G.mode.cfg; if (HoopAudio.ready) HoopAudio.S.ui(ev.newBest ? 'best' : 'confirm'); emit('modeDone', ev); saveSoon(); }
+      else if (ev.type === 'clutch') emit('toast', { text: ev.text, tone: 'good' });
     }
+    if (evs.length) emit('modeUpdate', G.mode);
   }
+  // finish the current drill early (pause menu "End session"); returns the results event or null
+  function endMode() {
+    if (!G.mode || G.mode.done || G.match) return null;
+    const evs = G.mode.end ? G.mode.end() || [] : [];
+    handleModeEvents(evs);
+    return evs.find(e => e.type === 'done') || null;
+  }
+  function restartMode() { return startMode(G.mode ? G.mode.id : 'free', G.mode && G.mode.cfg ? G.mode.cfg : {}); }
   function startMode(id, cfg = {}) {
     if(typeof HoopMatch!=='undefined')HoopMatch.stop(G);
     resetCourt();
     G.mode = HoopModes.create(id, cfg, G.records);
-    G.mode.cfg=cfg;
-    G.pendingMove = null;
+    G.mode.cfg = G.mode.cfg || cfg;
+    G.pendingMove = null; G.routine = null; G.feedWait = -1; G.lastMove = { name: null, t: -9 };
     const sp = G.mode.spot;
     if (sp) moveToSpot(sp, true);
-    ensureBallInHand();
+    if (G.mode.lockHoop != null && G.player) G.player.targetHoop = G.mode.lockHoop;
+    if (!G.mode.startEmpty) ensureBallInHand();
     if(id==='one'||id==='watch')HoopMatch.start(HoopGame,id==='watch',cfg);
     emit('mode', G.mode);
     return G.mode;
@@ -231,7 +273,9 @@ const HoopGame = (() => {
     if(!G.player)return;
     const pl=G.player;pl.placeAt(pl.x,pl.z,pl.yaw);pl.hasBall=false;
     for(const e of G.balls){if(e.shot&&!e.shot.resolved)e.shot.resolved=true;e.active=false;e.state='free';e.pass=null;e.shot=null;}
+    if (G.replay) stopReplay();
     G.held=null;G.shotInput=null;G.rapidAt=0;G.pendingMove=null;G.lastShot=null;G.replay=null;
+    G.autoReplay=null;G.autoReplayPending=false;G.routine=null;G.feedWait=-1;
     Object.assign(G.meter,{active:false,released:false,fill:0});
     if(G.W){G.W.trail.visible=false;G.W.guide.visible=false;G.W.releaseMarker.visible=false;}
   }
@@ -258,7 +302,14 @@ const HoopGame = (() => {
     const pl = G.player;
     if (!pl || G.paused || G.replay || G.shotInput || pl.air || pl.action==='dunk') return;
     if (G.mode && G.mode.canShoot && !G.mode.canShoot()) { emit('toast', { text: G.mode.done ? 'Session complete' : 'Not yet', tone: 'info' }); return; }
-    if (!pl.hasBall) { callBall(); return; }
+    if (!pl.hasBall) { if (currentBallReturn() !== 'feed') callBall(); return; }
+    // drills with a spot ring only take shots from the spot: walk the shooter back instead
+    const sp = !G.match && G.mode && G.mode.requireSpot ? G.mode.spot : null;
+    if (sp && Math.hypot(sp.x - pl.x, sp.z - pl.z) > SPOT_TOLERANCE) {
+      if (!pl.autopilot && !pl.busy()) { moveToSpot(sp, false); emit('toast', { text: `Back to your spot: ${sp.label}`, tone: 'info' }); }
+      return;
+    }
+    if (G.routine && !G.routine.done) G.routine = null; // shooting cuts the pre-shot routine short
     const queued = pl.action === 'stepback';
     if (!pl.startShot(G.now)) return;
     G.shotInput = { downT: t, downSim: G.now, upT: null, releaseAt: null, startSim: queued ? null : G.now };
@@ -360,7 +411,7 @@ const HoopGame = (() => {
 
   // ---------------------------------------------------------------- simulation tick
   const MV = { mx: 0, mz: 0, sprint: false, walk: false };
-  let inputMove = { x: 0, y: 0, sprint: false, walk: false };
+  const inputMove = { x: 0, y: 0, sprint: false, walk: false };
 
   function tick(dt) {
     G.now += dt;
@@ -373,11 +424,15 @@ const HoopGame = (() => {
     if(G.match)HoopMatch.beforeTick(dt,G,MV);
     pl=G.player;
     if (pl.autopilot && (Math.abs(inputMove.x) + Math.abs(inputMove.y) > 0.3) && !(G.mode && G.mode.requireSpot)) pl.autopilot = null;
-    // target hoop: the basket the camera faces (fixed while a shot is in progress)
+    // target hoop: drills lock their basket; otherwise the basket the camera faces, with hysteresis so it
+    // does not flicker near half-court (fixed while a shot is in progress)
     if (!G.match && !pl.shot && !pl.autopilot) {
-      const d0 = (PH.HOOPS[0].cx - pl.x) * fx + (PH.HOOPS[0].cz - pl.z) * fz;
-      const d1 = (PH.HOOPS[1].cx - pl.x) * fx + (PH.HOOPS[1].cz - pl.z) * fz;
-      pl.targetHoop = d0 >= d1 ? 0 : 1;
+      if (G.mode && G.mode.lockHoop != null) pl.targetHoop = G.mode.lockHoop;
+      else {
+        const a0 = facing(PH.HOOPS[0], pl, fx, fz), a1 = facing(PH.HOOPS[1], pl, fx, fz);
+        const cur = pl.targetHoop === 1 ? a1 : a0, oth = pl.targetHoop === 1 ? a0 : a1;
+        if (oth > cur + 0.3) { pl.targetHoop = 1 - (pl.targetHoop === 1 ? 1 : 0); emit('targetHoop', pl.targetHoop); }
+      }
     }
     // queued shot after a step-back started this tick?
     const si = G.shotInput;
@@ -396,8 +451,16 @@ const HoopGame = (() => {
     if (G.meter.active && !pl.shot) { G.meter.active = false; G.meter.released = false; }
     if (G.shotInput && !pl.shot && pl.action !== 'stepback') G.shotInput = null;
 
+    // free-throw routine: a few dribbles in place after every catch, then set
+    const rt = G.routine;
+    if (rt && !rt.done && pl.hasBall && !pl.shot && pl.action === 'none') {
+      if (!pl.dribbling) {
+        if (rt.left > 0) { rt.left--; pl.dribbling = true; pl.dribblePhase = 0; }
+        else { rt.t += dt; if (rt.t > 0.25) { rt.done = true; emit('routine', { done: true }); } }
+      }
+    }
     const evs = pl.update(dt, pl.autopilot ? null : MV, G.now);
-    for (const ev of evs) playerEvent(ev);
+    for (let i = 0; i < evs.length; i++) playerEvent(evs[i]);
     if(G.match)HoopMatch.afterTick(dt,G,inputMove);
     if (G.meter.released && !pl.shot) { G.meter.active = false; G.meter.released = false; }
 
@@ -426,23 +489,49 @@ const HoopGame = (() => {
           if ((G.frame & 1) === 0 && tr.path.length < 3600) tr.path.push(b.px, b.py, b.pz);
           if (G.now - tr.releaseT > 7) resolveShot(tr, false, b.px, b.pz);
         } else if (tr && tr.returnAt && G.now >= tr.returnAt) {
-          tr.returnAt = null;
-          if (!pl.hasBall && !G.balls.some(x => x.state === 'pass')) passTo(e, V(b.px, Math.max(b.py, 0.3), b.pz));
+          // rebounder: wait until the ball has come off the rim and is dropping (never grab it mid-rattle),
+          // then pass it out from where it is
+          const settled = b.py < 1.7 || b.vy < -0.5 || G.now > tr.returnAt + 1.6;
+          if (settled) {
+            tr.returnAt = null;
+            if (!pl.hasBall && !anyBall('pass') && !anyBall('pickup') && currentBallReturn() === 'rebounder') passTo(e, _from.set(b.px, Math.max(b.py, 0.45), b.pz));
+          }
         }
       }
       e.cur.set(b.px, b.py, b.pz);
     }
+    // ball–ball contacts (when the physics module provides them)
+    if (PH.collideBalls) collideFreeBalls();
     // rapid return (rack feeds a new ball right after the release)
     if (G.rapidAt && G.now >= G.rapidAt) { G.rapidAt = 0; if (!pl.hasBall && !pl.shot) rackPass(); else if (!pl.hasBall) G.rapidAt = G.now + 0.1; }
+    // passer feed (catch-and-shoot drills): once the shooter is set on the spot, a pass comes in
+    if (!G.match && currentBallReturn() === 'feed') {
+      const ready = !pl.hasBall && !pl.shot && !pl.autopilot && !G.pendingMove && !pl.air && pl.action !== 'pickup' && !anyBall('pass') && !anyBall('pickup')
+        && !(G.mode && G.mode.done) && !(G.mode && G.mode.canShoot && !G.mode.canShoot());
+      if (ready) {
+        if (G.feedWait < 0) G.feedWait = 0;
+        G.feedWait += dt;
+        if (G.feedWait >= ((G.mode && G.mode.feedDelay) || 0.6)) {
+          G.feedWait = -1;
+          const P = (G.mode && G.mode.passer) || HoopModes.PASSER;
+          passTo(acquireBall(), _from.set(P.x, P.y, P.z));
+        }
+      } else G.feedWait = -1;
+    }
+    // automatic replay of a highlight once the ball has dropped
+    if (G.autoReplay && G.now >= G.autoReplay.at && !pl.shot && !G.paused) {
+      const ar = G.autoReplay; G.autoReplay = null;
+      if (!playReplay(0.5, { shot: ar.shot, auto: true, angle: ar.shot.dist > 8 ? 'rim' : 'side' })) { G.autoReplayPending = false; emit('replay', false); }
+    }
     // auto pickup of a loose ball the player walks over
-    if (!pl.hasBall && !pl.shot && !pl.air && pl.action!=='dunk' && pl.action !== 'pickup' && !G.balls.some(x => x.state === 'pass' || x.state === 'pickup')) {
+    if (!pl.hasBall && !pl.shot && !pl.air && pl.action!=='dunk' && pl.action !== 'pickup' && !anyBall('pass') && !anyBall('pickup')) {
       for (const e of G.balls) {
         if (!e.active || e.state !== 'free') continue;
         const b = e.b;
         if (e.shot && !e.shot.resolved) continue;
         const d = Math.hypot(b.px - pl.x, b.pz - pl.z);
         if (d < 0.62 * pl.hs && b.py < 1.5 && Math.hypot(b.vx, b.vy, b.vz) < 7) {
-          e.state = 'pickup'; e.b.held = true; e.pickT = 0; e.pickFrom = V(b.px, b.py, b.pz);
+          e.state = 'pickup'; e.b.held = true; e.pickT = 0; (e.pickFrom || (e.pickFrom = V())).set(b.px, b.py, b.pz);
           pl.action = 'pickup'; pl.actionT = 0; pl.pickupH = b.py; pl.ballPos.set(b.px, b.py, b.pz); pl.dribbling = false;
           break;
         }
@@ -454,8 +543,32 @@ const HoopGame = (() => {
       if (G.pendingMove && G.now >= G.pendingMove.at && !pl.shot) { moveToSpot(G.pendingMove.spot, false); G.pendingMove = null; }
     }
     if (saveTimer > 0) { saveTimer -= dt; if (saveTimer <= 0) save(); }
-    const near=G.balls.filter(e=>e.active).map(e=>({x:e.b.px,y:e.b.py,z:e.b.pz}));
-    for(const net of G.W.nets){const close=near.some(b=>Math.abs(b.x-net.hoop.cx)<.8&&Math.abs(b.z-net.hoop.cz)<.8&&b.y<K.RIM_Y+.3);if(close||net.energy>1e-4||net.pulse)net.step(dt,near);}
+    // nets react to nearby balls (pooled position list, no per-tick allocation)
+    _near.length = 0;
+    for (const e of G.balls) if (e.active) { const o = _nearPool[_near.length]; o.x = e.b.px; o.y = e.b.py; o.z = e.b.pz; _near.push(o); }
+    stepNets(dt, _near, 0.8, 0.3);
+  }
+  function stepNets(dt, near, r, above) {
+    for (const net of G.W.nets) {
+      let close = false;
+      for (let i = 0; i < near.length; i++) { const b = near[i]; if (Math.abs(b.x - net.hoop.cx) < r && Math.abs(b.z - net.hoop.cz) < r && b.y < K.RIM_Y + above) { close = true; break; } }
+      if (close || net.energy > 1e-4 || net.pulse) net.step(dt, near);
+    }
+  }
+  // cosine between the camera's forward direction and the direction to a hoop
+  function facing(H, pl, fx, fz) { const dx = H.cx - pl.x, dz = H.cz - pl.z, d = Math.hypot(dx, dz) || 1; return (dx * fx + dz * fz) / d; }
+  const _from = V();
+  function onBallBall(kind, hi, x, y, z, v) { if (v > 0.6) contactSound(null, 'ball', x, y, z, v); }
+  function collideFreeBalls() {
+    const B = G.balls;
+    for (let i = 0; i < B.length; i++) {
+      const a = B[i]; if (!a.active || a.state === 'held' || a.state === 'pickup') continue;
+      for (let j = i + 1; j < B.length; j++) {
+        const c = B[j]; if (!c.active || c.state === 'held' || c.state === 'pickup') continue;
+        if (a.state === 'pass' && c.state === 'pass') continue;
+        PH.collideBalls(a.b, c.b, onBallBall);
+      }
+    }
   }
 
   const _w = V(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
@@ -490,11 +603,13 @@ const HoopGame = (() => {
     return clamp(_cd.dot(_cr) / d, -1, 1) * 0.8;
   }
   function distOf(p) { return G.camera ? G.camera.position.distanceTo(p) : 5; }
+  const _sharedSnd = {};
   function contactSound(e, kind, x, y, z, v) {
-    if (!HoopAudio.ready || !e) return;
-    const last = e.lastSnd[kind] || -9;
+    if (!HoopAudio.ready) return;
+    const ls = e ? e.lastSnd : _sharedSnd;
+    const last = ls[kind] || -9;
     if (G.now - last < 0.035) return;
-    e.lastSnd[kind] = G.now;
+    ls[kind] = G.now;
     const p = _tgt.set(x, y, z), pan = panOf(p), dist = distOf(p), S = HoopAudio.S;
     if (kind === 'floor') S.floor(v, pan, dist);
     else if (kind === 'rim' || kind === 'neck') S.rim(v, pan, dist);
@@ -541,15 +656,15 @@ const HoopGame = (() => {
         const s = 0.32 + m.position.y * 0.08; bl.scale.set(s, s, s);
       }
     }
-    // nets react to nearby balls
-    const near = [];
-    for (const e of G.balls) if (e.active) near.push({ x: e.cur.x, y: e.cur.y, z: e.cur.z });
+    // nets: the tick steps them; redraw the lines only while they move
     for (const n of W.nets) {
-      const close = near.some(b => Math.abs(b.x - n.hoop.cx) < 0.9 && Math.abs(b.z - n.hoop.cz) < 0.9 && b.y < K.RIM_Y + 0.4);
-      if(close||n.energy>1e-4||n.pulse)n.writeLines();
+      let close = false;
+      for (let i = 0; i < _near.length; i++) { const b = _near[i]; if (Math.abs(b.x - n.hoop.cx) < 0.9 && Math.abs(b.z - n.hoop.cz) < 0.9 && b.y < K.RIM_Y + 0.4) { close = true; break; } }
+      if (close || n.energy > 1e-4 || n.pulse) n.writeLines();
     }
-    W.spotRing.visible = !!(G.mode && G.mode.spot && G.mode.requireSpot && !G.mode.done);
-    if (W.spotRing.visible) W.spotRing.position.set(G.mode.spot.x, 0.006, G.mode.spot.z);
+    const md = G.mode, ring = !!(md && !G.match && md.spot && (md.requireSpot || md.showSpot) && !md.done);
+    W.spotRing.visible = ring;
+    if (ring) W.spotRing.position.set(md.spot.x, 0.006, md.spot.z);
     if (!G.meter.active) W.guide.visible = false;
     drawTrail();
   }
@@ -639,33 +754,114 @@ const HoopGame = (() => {
   }
 
   // ---------------------------------------------------------------- replay
+  // The recorder stores what was actually rendered; replays play those frames back (never a re-simulation).
+  const _recBalls = [];
+  for (let i = 0; i < MAX_BALLS; i++) _recBalls.push({ visible: false, x: 0, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1 });
   function recordFrame() {
     if (!G.recorder || G.replay) return;
-    G.recAcc = (G.recAcc || 0) + 1;
-    const arr = G._recBalls || (G._recBalls = []);
-    arr.length = 0;
-    for (const e of G.balls) {
-      const m = ballMesh(e);
-      arr.push({ visible: e.active, x: m.position.x, y: m.position.y, z: m.position.z, qx: m.quaternion.x, qy: m.quaternion.y, qz: m.quaternion.z, qw: m.quaternion.w });
+    for (let i = 0; i < G.balls.length; i++) {
+      const e = G.balls[i], m = ballMesh(e), o = _recBalls[i];
+      o.visible = e.active; o.x = m.position.x; o.y = m.position.y; o.z = m.position.z;
+      o.qx = m.quaternion.x; o.qy = m.quaternion.y; o.qz = m.quaternion.z; o.qw = m.quaternion.w;
     }
-    G.recorder.capture(G.now, G.player.model, arr);
+    G.recorder.capture(G.now, G.player.model, _recBalls);
   }
-  function playReplay(speed = 0.5) {
-    const tr = G.lastShot;
-    if (!tr || !G.recorder) { emit('toast', { text: 'No shot to replay yet', tone: 'info' }); return false; }
+  function clipFor(tr) {
+    if (!tr || !G.recorder) return null;
     const t0 = tr.startT - 0.6, t1 = Math.min(G.now, (tr.resolveT || G.now) + 1.2);
-    const clip = G.recorder.clip(t0, t1, { shot: tr });
-    if (!clip) return false;
-    G.replay = { clip, t: 0, speed, len: clip.t1 - clip.t0, camMode: G.rig.mode };
-    G.rig.setMode('side'); G.rig.snapNext();
+    return G.recorder.clip(t0, t1, { shot: tr, char: tr.char, ballIdx: tr.entry ? tr.entry.i : 0 });
+  }
+  const REPLAY_ANGLES = ['side', 'behind', 'rim', 'ball', 'free'];
+  // playReplay(speed, { shot, clip, angle, auto, highlight }) — auto replays play once and return to the game
+  function playReplay(speed, opts = {}) {
+    if (G.match && !opts.clip) { emit('toast', { text: 'Replays are available in practice modes', tone: 'info' }); return false; }
+    const clip = opts.clip || clipFor(opts.shot || G.lastShot);
+    if (!clip) { if (!opts.auto) emit('toast', { text: 'No shot to replay yet', tone: 'info' }); return false; }
+    const prev = G.replay;
+    G.replay = { clip, t: 0, speed: speed || G.settings.replaySpeed || 0.5, len: clip.t1 - clip.t0, camMode: prev ? prev.camMode : G.rig.mode,
+      playing: true, angle: 'side', loop: !opts.auto, auto: !!opts.auto, hold: 0, highlight: opts.highlight == null ? null : opts.highlight };
+    _rbPrev.ok = false;
+    setReplayAngle(opts.angle || G.settings.replayAngle || 'side');
+    for (const k in G.models) G.models[k].root.visible = k === (clip.char || G.def.id);
     emit('replay', true);
     return true;
   }
+  function setReplayAngle(a) {
+    const R = G.replay; if (!R) return;
+    if (!REPLAY_ANGLES.includes(a)) a = 'side';
+    R.angle = a;
+    const tr = R.clip.shot, H = PH.HOOPS[tr.hoop];
+    if (a === 'free') { // orbit target between the shooter and the rim, starting from the current view
+      G.rig.free.target.set((tr.x + H.cx) / 2, 1.6, (tr.z + H.cz) / 2);
+      G.rig.free.yaw = Math.atan2(G.rig.free.target.x - G.camera.position.x, G.rig.free.target.z - G.camera.position.z);
+      G.rig.free.dist = Math.max(4, Math.min(14, Math.hypot(tr.x - H.cx, tr.z - H.cz) * 0.8 + 3));
+      G.rig.free.pitch = 0.32;
+    }
+    G.rig.setMode(a); G.rig.snapNext();
+    emit('replayState', replayState());
+  }
   function stopReplay() {
-    if (!G.replay) return;
-    G.rig.setMode(G.replay.camMode); G.rig.snapNext();
+    const R = G.replay;
+    if (!R) return;
     G.replay = null;
+    G.rig.setMode(R.camMode); G.rig.snapNext();
+    for (const k in G.models) G.models[k].root.visible = G.match ? G.match.ids.includes(k) : k === G.def.id;
+    hideReplayMarkers();
+    if (R.auto) G.autoReplayPending = false;
     emit('replay', false);
+  }
+  function hideReplayMarkers() {
+    const W = G.W; if (!W) return;
+    if (W.releaseMarker) W.releaseMarker.visible = false;
+    if (W.contactMarkers) for (const m of W.contactMarkers) m.visible = false;
+  }
+  // replay transport: { speed, playing, toggle, t (seconds into the clip), step (seconds), angle ('next' cycles) }
+  function replayCtl(o = {}) {
+    const R = G.replay; if (!R) return null;
+    if (o.speed != null) R.speed = clamp(+o.speed, 0.05, 2);
+    if (o.playing != null) R.playing = !!o.playing;
+    if (o.toggle) { R.playing = !R.playing; if (R.playing && R.t >= R.len) R.t = 0; }
+    if (o.t != null) { R.t = clamp(+o.t, 0, R.len); R.hold = 0; }
+    if (o.step != null) { R.t = clamp(R.t + o.step, 0, R.len); R.playing = false; }
+    if (o.angle) setReplayAngle(o.angle === 'next' ? REPLAY_ANGLES[(REPLAY_ANGLES.indexOf(R.angle) + 1) % REPLAY_ANGLES.length] : o.angle);
+    emit('replayState', replayState());
+    return replayState();
+  }
+  function replayState() {
+    const R = G.replay; if (!R) return null;
+    const tr = R.clip.shot;
+    const marks = [];
+    if (tr.releaseT != null) marks.push({ t: tr.releaseT - R.clip.t0, kind: 'release' });
+    for (const c of tr.contacts || []) marks.push({ t: c.t - R.clip.t0, kind: c.kind });
+    if (tr.resolveT != null) marks.push({ t: tr.resolveT - R.clip.t0, kind: tr.made ? 'make' : 'miss' });
+    return { t: R.t, len: R.len, speed: R.speed, playing: R.playing, angle: R.angle, auto: R.auto, highlight: R.highlight, marks,
+      shot: { made: tr.made, result: tr.result, missType: tr.missType, dist: tr.dist, char: tr.char } };
+  }
+  // in-session highlight reel (kept in memory only)
+  function saveHighlight() {
+    const clip = G.replay ? G.replay.clip : clipFor(G.lastShot);
+    if (!clip) { emit('toast', { text: 'No shot to save yet', tone: 'info' }); return null; }
+    if (G.highlights.some(h => h.clip.shot === clip.shot)) { emit('toast', { text: 'Already in your highlights', tone: 'info' }); return null; }
+    const tr = clip.shot, def = RO.getCharacter(tr.char);
+    const h = { clip, at: Date.now(), char: tr.char, label: `${def.short} · ${HoopModes.ft(tr.dist)} · ${tr.made ? resultLabel(tr) : 'Miss'}`, made: tr.made, dist: tr.dist };
+    G.highlights.push(h);
+    if (G.highlights.length > 12) G.highlights.shift();
+    emit('toast', { text: 'Saved to highlights', tone: 'good' });
+    emit('highlights', G.highlights);
+    return h;
+  }
+  function playHighlight(i) { const h = G.highlights[i]; return h ? playReplay(G.settings.replaySpeed, { clip: h.clip, highlight: i }) : false; }
+
+  // menu backdrops: 'menu' = slow cinematic orbit of the gym, 'select' = turntable on the player, 'play' = gameplay
+  function setView(v) {
+    if (G.view === v) return;
+    if (G.replay) stopReplay();
+    if (G.view === 'play') G.viewCamMode = G.rig.mode;
+    G.view = v;
+    if (v === 'play') { G.rig.setMode(G.viewCamMode || G.settings.camMode || 'game'); G.rig.frameShift = 0; }
+    else G.rig.setMode(v === 'select' ? 'turntable' : 'orbit');
+    G.rig.snapNext();
+    emit('view', v);
   }
 
   // ---------------------------------------------------------------- main loop
@@ -683,10 +879,10 @@ const HoopGame = (() => {
     if (!G.paused && !G.replay && G.autoTick) {
       acc += dt;
       let n = 0;
-      while (acc >= TICK && n < 24) { tick(TICK); acc -= TICK; n++; G.frame++; }
-      if (n >= 24) acc = 0;
+      while (acc >= TICK && n < 24 && !G.replay) { tick(TICK); acc -= TICK; n++; G.frame++; }
+      if (n >= 24 || G.replay) acc = 0;
       alpha = acc / TICK;
-    }
+    } else if (saveTimer > 0) { saveTimer -= dt; if (saveTimer <= 0) save(); } // settings changed in menus still persist
     const t1 = performance.now();
     render(dt, alpha);
     G.perf.tickMs = G.perf.tickMs * 0.9 + (t1 - t0) * 0.1;
@@ -695,30 +891,56 @@ const HoopGame = (() => {
   }
 
   const _ballCtx = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 };
+  const _camCtx = { px: 0, py: 0, pz: 0, yaw: 0, hoop: 0, shooting: false, aligning: false, ball: null, dt: 0, now: 0, view: 'play', replay: false };
+  function renderReplay(dt) {
+    const R = G.replay, W = G.W;
+    if (R.playing && !G.paused) R.t += dt * R.speed;
+    if (R.t >= R.len) {
+      R.t = R.len; R.hold += G.paused ? 0 : dt;
+      if (R.auto && R.hold > 0.7) { stopReplay(); return null; }
+      if (R.loop && R.playing && R.hold > 0.6) { R.t = 0; R.hold = 0; _rbPrev.ok = false; }
+    } else R.hold = 0;
+    const model = G.models[R.clip.char] || G.player.model;
+    HoopReplay.apply(R.clip, R.t, model, W.ballMeshes, _replayBalls);
+    // markers: release point and rim/board contacts appear as the replay passes them
+    const tr = R.clip.shot, T = R.clip.t0 + R.t;
+    if (W.releaseMarker && tr.path && tr.path.length >= 3) { W.releaseMarker.position.set(tr.path[0], tr.path[1], tr.path[2]); W.releaseMarker.visible = T >= tr.releaseT; }
+    if (W.contactMarkers) for (let i = 0; i < W.contactMarkers.length; i++) {
+      const c = tr.contacts && tr.contacts[i], m = W.contactMarkers[i];
+      if (c && T >= c.t) { m.position.set(c.x, c.y, c.z); m.visible = true; } else m.visible = false;
+    }
+    // the net reacts to the replayed ball too
+    _near.length = 0;
+    for (let i = 0; i < _replayBalls.length; i++) { const b = _replayBalls[i]; if (b) { const o = _nearPool[_near.length]; o.x = b.x; o.y = b.y; o.z = b.z; _near.push(o); } }
+    if (R.playing && !G.paused) { stepNets(Math.min(dt * R.speed, 1 / 30), _near, 0.8, 0.3); for (const n of W.nets) if (n.energy > 1e-4 || n.pulse) n.writeLines(); }
+    const rb = _replayBalls[R.clip.ballIdx || 0];
+    if (!rb) { _rbPrev.ok = false; return null; }
+    const sdt = Math.max(1e-3, dt * R.speed), moving = R.playing && !G.paused && _rbPrev.ok;
+    _ballCtx.vx = moving ? (rb.x - _rbPrev.x) / sdt : 0; _ballCtx.vy = moving ? (rb.y - _rbPrev.y) / sdt : 0; _ballCtx.vz = moving ? (rb.z - _rbPrev.z) / sdt : 0;
+    _rbPrev.x = rb.x; _rbPrev.y = rb.y; _rbPrev.z = rb.z; _rbPrev.ok = true;
+    _ballCtx.x = rb.x; _ballCtx.y = rb.y; _ballCtx.z = rb.z;
+    return _ballCtx;
+  }
   function render(dt, alpha) {
     const pl = G.player;
-    let replayBalls = null;
-    if (G.replay) {
-      const R = G.replay;
-      if (!G.paused) R.t += dt * R.speed;
-      if (R.t > R.len + 0.4) R.t = 0;
-      replayBalls = [];
-      HoopReplay.apply(R.clip, Math.min(R.t, R.len), pl.model, G.W.ballMeshes, replayBalls);
-    } else {
+    let ball = null;
+    if (G.replay) ball = renderReplay(dt);
+    if (!G.replay) {
       pl.computePose(dt);
       HoopCharacters.applyPose(pl.model, pl.pose);
       if (HoopCharacters.update) HoopCharacters.update(pl.model, dt, pl.pose);
       syncVisuals(alpha);
-      recordFrame();
+      if (G.view === 'play') recordFrame();
       if(G.match)HoopMatch.render(dt,G);
+      const tr = G.lastShot;
+      if (tr && !tr.resolved && tr.entry && tr.entry.active) { const b = tr.entry.b; _ballCtx.x = b.px; _ballCtx.y = b.py; _ballCtx.z = b.pz; _ballCtx.vx = b.vx; _ballCtx.vy = b.vy; _ballCtx.vz = b.vz; ball = _ballCtx; }
     }
     // camera
-    const tr = G.lastShot;
-    let ball = null;
-    if (tr && !tr.resolved && tr.entry.active) { const b = tr.entry.b; Object.assign(_ballCtx, { x: b.px, y: b.py, z: b.pz, vx: b.vx, vy: b.vy, vz: b.vz }); ball = _ballCtx; }
-    else if (replayBalls && replayBalls.length) { Object.assign(_ballCtx, replayBalls[0], { vx: 0, vy: 0, vz: 0 }); ball = _ballCtx; }
-    const px = G.replay ? pl.model.root.position.x : pl.x, pz = G.replay ? pl.model.root.position.z : pl.z;
-    G.rig.update({ px, py: 0, pz, hoop: G.replay ? G.replay.clip.shot.hoop : pl.targetHoop, shooting: !!pl.shot, aligning: G.settings.autoAlign && pl.hasBall && pl.speed() < 0.3, ball, dt, now: G.now });
+    const R = G.replay, C = _camCtx, rm = R ? (G.models[R.clip.char] || pl.model) : null;
+    C.px = R ? rm.root.position.x : pl.x; C.pz = R ? rm.root.position.z : pl.z; C.py = 0;
+    C.yaw = pl.yaw; C.hoop = R ? R.clip.shot.hoop : pl.targetHoop; C.shooting = !R && !!pl.shot;
+    C.aligning = !R && G.settings.autoAlign && pl.hasBall && pl.speed() < 0.3; C.ball = ball; C.dt = dt; C.now = G.now; C.view = G.view; C.replay = !!R;
+    G.rig.update(C);
     if (G.W.update) G.W.update(dt, G.camera, G);
     if (G.W.reflect) G.W.reflect.render(G.renderer, G.W.scene, G.camera, [G.W.floor, G.W.trail, G.W.guide, G.W.spotRing]);
     if (typeof HoopRender !== 'undefined' && HoopRender.render) HoopRender.render(G.renderer, G.W.scene, G.camera, dt, G);
@@ -727,39 +949,50 @@ const HoopGame = (() => {
     if (typeof HoopUI !== 'undefined' && HoopUI.frame) HoopUI.frame(dt);
   }
 
+  function noteMove(name) { G.lastMove.name = name; G.lastMove.t = G.now; emit('move', name); }
   function processInput(dt) {
     const s = HoopInput.sample();
-    inputMove = { x: s.x, y: s.y, sprint: s.sprint, walk: s.walk };
-    if (G.paused) inputMove = { x: 0, y: 0, sprint: false, walk: false };
+    const live = !G.paused && G.view === 'play';
+    inputMove.x = live ? s.x : 0; inputMove.y = live ? s.y : 0; inputMove.sprint = live && s.sprint; inputMove.walk = live && s.walk;
     const padK = 520 * dt;
-    if (!G.paused) {
+    // camera: gameplay + replay orbit/free cam, and the turntable in character select
+    if (!G.paused || G.view !== 'play') {
       G.rig.manual(s.camDX + s.padCamX * padK, s.camDY + s.padCamY * padK, G.now);
       if (s.zoom) G.rig.zoom(s.zoom);
+      if (G.replay && G.replay.angle === 'free' && !G.paused && G.rig.pan) G.rig.pan(s.x, s.y, dt);
     }
     for (const ev of HoopInput.drain()) {
+      const ty = ev.type;
+      if (ty.startsWith('nav') || ty === 'device') { emit('ui', ty); continue; } // menu navigation (gamepad) → UI
+      if (G.view !== 'play') { if (ty === 'pause' || ty === 'gamepadConnected' || ty === 'gamepadDisconnected') emit('ui', ty); continue; }
+      if (G.replay && ty !== 'pause' && ty !== 'replay' && ty !== 'camera' && ty !== 'hud' && ty !== 'fullscreen' && ty !== 'mute' && ty !== 'stats') {
+        if (ty === 'shootDown') replayCtl({ toggle: true });
+        continue;
+      }
       if(G.match&&HoopMatch.input(G,ev))continue;
-      if (ev.type === 'shootDown') onShootDown(ev.t);
-      else if (ev.type === 'shootUp') onShootUp(ev.t);
-      else if (G.paused && ev.type !== 'pause') continue;
-      else if (ev.type === 'cross') { if (G.player.crossover()) emit('move', 'crossover'); }
-      else if (ev.type === 'stepback') { if (G.player.stepback()) emit('move', 'stepback'); }
-      else if(ev.type==='behind'||ev.type==='between'||ev.type==='hesitation')G.player.handle(ev.type);
-      else if(ev.type==='handle')G.player.handle(['between','behind','hesitation'][(G.handleCycle=(G.handleCycle||0)+1)%3]);
-      else if(ev.type==='dunk'){if(!G.player.dunk())emit('toast',{text:G.match?'Create space and an open path to the rim.':'Dunk: hold the ball and get within 8 feet of the rim.',tone:'info'});}
-      else if (ev.type === 'ball') callBall();
-      else if (ev.type === 'camera') { const l = G.rig.cycle(); G.settings.camMode = G.rig.mode; emit('toast', { text: `Camera: ${l}`, tone: 'info' }); }
-      else if (ev.type === 'replay') { if (G.replay) stopReplay(); else playReplay(); }
-      else if (ev.type === 'zoomIn') G.rig.zoom(-1);
-      else if (ev.type === 'zoomOut') G.rig.zoom(1);
-      else if (ev.type === 'mute') { G.settings.muted = !G.settings.muted; HoopAudio.setMuted(G.settings.muted); emit('toast', { text: G.settings.muted ? 'Sound off' : 'Sound on', tone: 'info' }); }
-      else emit('ui', ev.type); // pause, stats, hud, fullscreen, gamepad connect… handled by the UI
+      if (ty === 'shootDown') onShootDown(ev.t);
+      else if (ty === 'shootUp') onShootUp(ev.t);
+      else if (G.paused && ty !== 'pause') continue;
+      else if (ty === 'cross') { if (G.player.crossover()) noteMove('crossover'); }
+      else if (ty === 'stepback') { if (G.player.stepback()) noteMove('stepback'); }
+      else if(ty==='behind'||ty==='between'||ty==='hesitation'){ if (G.player.handle(ty)) noteMove(ty); }
+      else if(ty==='handle'){ const k=['between','behind','hesitation'][(G.handleCycle=(G.handleCycle||0)+1)%3]; if (G.player.handle(k)) noteMove(k); }
+      else if(ty==='dunk'){if(!G.player.dunk())emit('toast',{text:G.match?'Create space and an open path to the rim.':'Dunk: hold the ball and get within 8 feet of the rim.',tone:'info'});}
+      else if (ty === 'ball') callBall();
+      else if (ty === 'camera') { if (G.replay) replayCtl({ angle: 'next' }); else { const l = G.rig.cycle(); G.settings.camMode = G.rig.mode; emit('toast', { text: `Camera: ${l}`, tone: 'info' }); saveSoon(); } }
+      else if (ty === 'replay') { if (G.replay) stopReplay(); else playReplay(); }
+      else if (ty === 'zoomIn') G.rig.zoom(-1);
+      else if (ty === 'zoomOut') G.rig.zoom(1);
+      else if (ty === 'mute') { G.settings.muted = !G.settings.muted; HoopAudio.setMuted(G.settings.muted); emit('toast', { text: G.settings.muted ? 'Sound off' : 'Sound on', tone: 'info' }); }
+      else emit('ui', ty); // pause, stats, hud, fullscreen, gamepad connect… handled by the UI
     }
   }
 
   function setPaused(p) {
+    if (!p && G.view !== 'play') setView('play');
     if (G.paused === p) return;
     G.paused = p;
-    if (p) { HoopInput.releaseLock(); if (HoopAudio.ready) HoopAudio.suspend(); }
+    if (p) HoopInput.releaseLock(); // audio keeps running so menu sounds play; the frozen sim makes no noise
     else if (HoopAudio.ready) HoopAudio.resume();
     emit('pause', p);
   }
@@ -772,12 +1005,17 @@ const HoopGame = (() => {
     else if (k === 'resScale') resize();
     else if (k === 'camSens') G.rig.settings.sens = v;
     else if (k === 'camDist') G.rig.settings.dist = v;
+    else if (k === 'camHeight') G.rig.settings.height = v;
+    else if (k === 'camSmooth') G.rig.settings.smoothing = v;
     else if (k === 'fov') G.rig.settings.fov = v;
     else if (k === 'invertY') G.rig.settings.invertY = v;
-    else if (k === 'camMode') G.rig.setMode(v);
+    else if (k === 'camMode') { if (G.view === 'play' && !G.replay) G.rig.setMode(v); else G.viewCamMode = v; }
+    else if (k === 'deadzone' && HoopInput.config) HoopInput.config.deadzone = v;
+    else if (k === 'rumble' && HoopInput.config) HoopInput.config.rumble = v;
     else if (k === 'muted') HoopAudio.setMuted(v);
     else if (k === 'master' || k === 'sfx' || k === 'amb') HoopAudio.setVolumes(G.settings.master, G.settings.sfx, G.settings.amb);
     saveSoon();
+    emit('setting', { k, v });
   }
 
   // ---------------------------------------------------------------- boot
@@ -793,7 +1031,9 @@ const HoopGame = (() => {
     G.renderer = makeRenderer(host);
     G.camera = new THREE.PerspectiveCamera(G.settings.fov, window.innerWidth / window.innerHeight, 0.05, 160);
     G.rig = new HoopCamera.Rig(G.camera);
-    Object.assign(G.rig.settings, { sens: G.settings.camSens, dist: G.settings.camDist, fov: G.settings.fov, invertY: G.settings.invertY });
+    Object.assign(G.rig.settings, { sens: G.settings.camSens, dist: G.settings.camDist, fov: G.settings.fov, invertY: G.settings.invertY,
+      height: G.settings.camHeight, smoothing: G.settings.camSmooth });
+    if (HoopInput.config) Object.assign(HoopInput.config, { deadzone: G.settings.deadzone, rumble: G.settings.rumble });
     G.rig.setMode(HoopCamera.MODES.includes(G.settings.camMode) ? G.settings.camMode : 'game');
     resize();
     emit('progress', { p: 0.1, label: 'Building the gym' });
@@ -817,7 +1057,10 @@ const HoopGame = (() => {
     window.addEventListener('pointerdown', unlock, { once: true });
     window.addEventListener('keydown', unlock, { once: true });
     window.addEventListener('resize', resize);
-    document.addEventListener('visibilitychange', () => { if (document.hidden && G.ready) { setPaused(true); save(); } });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && G.ready) { setPaused(true); save(); if (HoopAudio.ready) HoopAudio.suspend(); }
+      else if (!document.hidden && HoopAudio.ready) HoopAudio.resume();
+    });
     window.addEventListener('beforeunload', save);
     G.ready = true;
     emit('progress', { p: 1, label: 'Ready' });
@@ -829,7 +1072,9 @@ const HoopGame = (() => {
   // ---------------------------------------------------------------- automation / test API
   const api = {
     get G() { return G; },
-    dunk(){return G.player.dunk();},handle(kind){return G.player.handle(kind);},
+    dunk(){return G.player.dunk();},handle(kind){const ok=G.player.handle(kind);if(ok)noteMove(kind);return ok;},
+    crossover() { const ok = G.player.crossover(); if (ok) noteMove('crossover'); return ok; },
+    stepback() { const ok = G.player.stepback(); if (ok) noteMove('stepback'); return ok; },
     state() {
       const pl = G.player;
       return {
@@ -840,11 +1085,37 @@ const HoopGame = (() => {
         meter: { active: G.meter.active, lo: G.meter.lo, hi: G.meter.hi, T: G.meter.T, eMs: G.meter.eMs, grade: G.meter.grade, green: G.meter.green },
         lastShot: G.lastShot && shotSummary(G.lastShot), shots: G.shots.length, match:G.match ? HoopMatch.summary(G) : null,
         session: HoopStats.aggregate(HoopStats.filter(G.store, 'session')),
+        view: G.view, canShoot: canShootNow(), moving: !!(pl && pl.autopilot), ballReturn: currentBallReturn(),
+        spot: G.mode && G.mode.spot ? { id: G.mode.spot.id, label: G.mode.spot.label, x: G.mode.spot.x, z: G.mode.spot.z } : null,
+        hud: G.mode && G.mode.hud ? G.mode.hud() : null, routine: G.routine ? { left: G.routine.left, done: G.routine.done } : null,
+        replayState: replayState(), highlights: G.highlights.length, autoReplayPending: G.autoReplayPending,
       };
     },
     shots() { return G.shots.map(shotSummary); },
     // run the simulation synchronously (no rendering). Use setAuto(false) first for deterministic tests.
-    advance(sec) { const n = Math.round(sec / TICK); for (let i = 0; i < n; i++) { tick(TICK); G.frame++; } return api.state(); },
+    // opts.frames: also pose + record a replay frame every 1/60 s (so replays work without real rendering)
+    advance(sec, opts) {
+      const n = Math.round(sec / TICK), frames = opts && opts.frames;
+      for (let i = 0; i < n && !G.replay; i++) {
+        tick(TICK); G.frame++;
+        if (frames && (G.frame & 1) === 0) { const pl = G.player; pl.computePose(TICK * 2); HoopCharacters.applyPose(pl.model, pl.pose); syncVisuals(1); recordFrame(); }
+      }
+      return api.state();
+    },
+    // drive a drill to completion with perfectly timed shots (eMs may be a function of the attempt index); test helper
+    playMode(maxShots = 80, eMs = 0, opts = {}) {
+      const out = { shots: 0, done: false };
+      for (let guard = 0; guard < 4000 && out.shots < maxShots && G.mode && !G.mode.done; guard++) {
+        if (G.replay) stopReplay();
+        if (canShootNow()) {
+          if (opts.move) { if (opts.move === 'stepback' ? api.stepback() : api.crossover()) api.advance(0.5); }
+          if (api.shoot(typeof eMs === 'function' ? eMs(out.shots) : eMs)) { out.shots++; api.advance(0.3); continue; }
+        }
+        api.advance(0.1);
+      }
+      out.done = !!(G.mode && G.mode.done);
+      return out;
+    },
     render() { render(1 / 60, 1); },
     setAuto(v) { G.autoTick = v; },
     place(x, z, yaw) {
@@ -871,7 +1142,18 @@ const HoopGame = (() => {
     giveBall() { ensureBallInHand(); },
     select: selectCharacter, mode: startMode, setSetting, pause: setPaused, replay: playReplay, stopReplay,
     jumper: setJumper, input: (type, t) => HoopInput.push(type, t),
+    endMode, restartMode, view: setView, replayCtl, saveHighlight, highlights: () => G.highlights.map(h => ({ label: h.label, made: h.made, dist: h.dist, char: h.char })),
+    playHighlight, records: () => JSON.parse(JSON.stringify(G.records)), modes: () => HoopModes.MODE_INFO.map(m => ({ id: m.id, name: m.name, kind: m.kind })),
   };
+  // can the shooter take a counted shot right now (has the ball, set, drill allows it)?
+  function canShootNow() {
+    const pl = G.player;
+    if (!pl || !pl.hasBall || pl.shot || pl.autopilot || G.pendingMove || pl.air || pl.action === 'dunk' || G.replay) return false;
+    if (pl.action !== 'none' && pl.action !== 'catch') return false;
+    if (G.mode && G.mode.canShoot && !G.mode.canShoot()) return false;
+    const sp = !G.match && G.mode && G.mode.requireSpot ? G.mode.spot : null;
+    return !(sp && Math.hypot(sp.x - pl.x, sp.z - pl.z) > SPOT_TOLERANCE);
+  }
   function shotSummary(tr) {
     return { id: tr.id, char: tr.char, dist: tr.dist, label: tr.label, three: tr.three, resolved: tr.resolved, made: tr.made, result: tr.result,
       missType: tr.missType, eMs: tr.eMs, grade: tr.grade, green: tr.green, relSpeed: tr.relSpeed, relAngle: tr.relAngle, spinRps: tr.spinRps,
@@ -882,5 +1164,6 @@ const HoopGame = (() => {
   return {
     G, boot, on, emit, selectCharacter, setJumper, startMode, setPaused, setSetting, applyQuality, playReplay, stopReplay,
     callBall, save, resetCourt, api, DEFAULT_SETTINGS, TICK,
+    endMode, restartMode, setView, replayCtl, replayState, saveHighlight, playHighlight, canShootNow, REPLAY_ANGLES,
   };
 })();
