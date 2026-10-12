@@ -14,7 +14,8 @@ const HoopUI = (() => {
     game.on('release', (r) => showRelease(r));
     game.on('shotResult', (tr) => showResult(tr));
     game.on('modeDone', (d) => showDone(d));
-    game.on('pause', (p) => { $('#pause').classList.toggle('hidden', !p || menuOpen); });
+    game.on('matchRestart',()=>$('#results').classList.add('hidden'));
+    game.on('pause', (p) => { $('#pause').classList.toggle('hidden', !p || menuOpen); document.body.classList.toggle('is-paused', p); });
     game.on('replay', (on) => { $('#replay-tag').classList.toggle('hidden', !on); });
     game.on('character', () => { refreshMenu(); });
     game.on('ui', (type) => {
@@ -54,12 +55,14 @@ const HoopUI = (() => {
     const d = $('#set-diff'); d.value = G.settings.difficulty; d.onchange = () => game.setSetting('difficulty', d.value);
     $('#btn-jsc').onclick = () => { $('#menu').classList.add('hidden'); HoopJSC.open(() => $('#menu').classList.remove('hidden')); };
     $('#btn-stats').onclick = () => { $('#menu').classList.add('hidden'); HoopStatsUI.open(() => $('#menu').classList.remove('hidden')); };
-    $('#btn-play').onclick = () => { showMenu(false); game.startMode(ms.value); game.setPaused(false); if (HoopAudio.ready) HoopAudio.S.ui('confirm'); };
+    $('#btn-play').onclick = () => { showMenu(false); game.startMode(ms.value,{opponent:$('#opponent-select').value,coach:$('#coach-select').value}); game.setPaused(false); if (HoopAudio.ready) HoopAudio.S.ui('confirm'); };
+    $('#btn-profile').onclick=()=>{ $('#menu').classList.add('hidden');HoopProfiles.open(G.def,$('#profile'),()=>$('#menu').classList.remove('hidden')); };
     refreshMenu();
   }
   function refreshMenu() {
     if (!G.def) return;
     document.querySelectorAll('.char-card').forEach(c => c.classList.toggle('on', c.dataset.id === G.def.id));
+    const opponent=$('#opponent-select'),previous=opponent.value;opponent.innerHTML=HoopRoster.CHARACTERS.filter(c=>c.id!==G.def.id).map(c=>`<option value="${c.id}">${c.name}</option>`).join('');if([...opponent.options].some(o=>o.value===previous))opponent.value=previous;
   }
   function showMenu(v) {
     menuOpen = v;
@@ -110,11 +113,11 @@ const HoopUI = (() => {
     const show = G.settings.meter && M.active;
     meter.classList.toggle('show', show);
     if (show) {
-      $('#meter-fill').style.height = (M.fill * 100).toFixed(1) + '%';
+      $('#meter-fill').style.left = (M.fill * 100).toFixed(1) + '%';
       const z = $('#meter-zone');
-      if (M.lo !== null) { const a = (M.T + M.lo) / M.max, b = (M.T + M.hi + 0.002) / M.max; z.style.bottom = (a * 100) + '%'; z.style.height = Math.max(0.8, (b - a) * 100) + '%'; z.style.display = 'block'; }
+      if (M.lo !== null) { const a = (M.T + M.lo) / M.max, b = (M.T + M.hi + 0.002) / M.max; z.style.left = (a * 100) + '%'; z.style.width = Math.max(0.8, (b - a) * 100) + '%'; z.style.display = 'block'; }
       else z.style.display = 'none';
-      $('#meter-ideal').style.bottom = (M.T / M.max * 100) + '%';
+      $('#meter-ideal').style.left = (M.T / M.max * 100) + '%';
       meter.classList.toggle('green', !!M.green && M.released);
     }
     // session / mode panel

@@ -27,9 +27,11 @@ const HoopShot = (() => {
     const jumpH = lerp(0.015, 0.62, p.jump) * (m.maxLeap / 0.8);
     const power = 0.30 * p.knee + 0.12 * p.dip + 0.22 * p.guide * p.extension + 0.14 * p.extension
                 + 0.12 * (1 - p.setPoint) + 0.10 * p.jump * (1 - p.releaseTiming);
-    const comfort = s.baseRange + 2.8 * (power - 0.35);
+    const badges=typeof HoopProfiles!=='undefined' ? HoopProfiles : null;
+    const comfort = s.baseRange + 2.8 * (power - 0.35)+(badges&&ch ? badges.effect(ch,'range')*.12 : 0);
     const sensMech = 1 + 0.28 * p.elbow + 0.18 * Math.abs(p.lean) - 0.08 * (p.flick - 0.5) + 0.05 * p.motion;
-    const comp = clamp(s.moveComp * (1 - 0.12 * p.motion) * (1 - 0.08 * p.elbow) * (0.94 + 0.06 * (1 - Math.abs(p.lean))), 0.3, 0.98);
+    let comp = clamp(s.moveComp * (1 - 0.12 * p.motion) * (1 - 0.08 * p.elbow) * (0.94 + 0.06 * (1 - Math.abs(p.lean))), 0.3, 0.98);
+    if(badges&&ch)comp=Math.min(.99,comp+badges.effect(ch,'fade')*.008);
     const spinRps = clamp(lerp(1.5, 2.9, p.flick) - 0.35 * p.guide, 1.1, 3.0);
     const arcDeg = lerp(-1.5, 9.0, p.arc);
     return { releaseTime, jumpH, power, comfort, sensMech, comp, spinRps, arcDeg };
@@ -154,19 +156,43 @@ const HoopShot = (() => {
   //   bodyIdeal {vx,vy,vz} (at the ideal instant), offBalance, d (derive()), ch (character def),
   //   p (jumper params), difficulty, variance, rng, posAtE(e) -> {x,y,z} (release point for error e)
   function resolveRelease(ctx) {
-    const plan = planShot({ hoop: ctx.hoop, pos: ctx.idealPos, d: ctx.d, ch: ctx.ch, p: ctx.p, difficulty: ctx.difficulty });
-    const rel = releaseFromPlan(plan, { e: ctx.eSec, body: ctx.body, offBalance: ctx.offBalance, variance: ctx.variance, rng: ctx.rng });
+    let plan = planShot({ hoop: ctx.hoop, pos: ctx.idealPos, d: ctx.d, ch: ctx.ch, p: ctx.p, difficulty: ctx.difficulty });
+    let e=ctx.eSec,variance=ctx.variance;
+    // The shooter plans with their own jump: the vertical body motion of the jumper is part of the
+    // practiced motion (compensated). Only horizontal drift (scaled by comp in releaseFromPlan) and the
+    // timing error itself push the ball off line — so a perfectly timed release goes dead center.
+    const b0=ctx.body||{vx:0,vy:0,vz:0};
+    let body={vx:b0.vx||0,vy:0,vz:b0.vz||0};
+    const assist=assistWindow(ctx,plan);
+    if(assist){
+      const green=e>=assist.lo&&e<=assist.hi;
+      // Solve the actual release point: the green bar and real ball flight agree.
+      plan=planShot({hoop:ctx.hoop,pos:ctx.pos,d:ctx.d,ch:ctx.ch,p:ctx.p,difficulty:ctx.difficulty});
+      // outside the window the full remaining error applies on Pro; Casual softens it
+      e=green?0:Math.sign(e)*(Math.abs(e)-assist.hi)*(ctx.difficulty==='casual'?.58:1);
+      if(green){body={vx:0,vy:0,vz:0};variance='off';}
+    }
+    const rel = releaseFromPlan(plan, { e, body, offBalance: ctx.offBalance, variance, rng: ctx.rng });
     return { plan, rel };
+  }
+  function assistWindow(ctx,plan){
+    if(!ctx.humanAssist||ctx.difficulty==='sim')return null;
+    if(ctx.assistBounds)return {...ctx.assistBounds,assisted:true};
+    const rating=ctx.ch.attributes ? (plan.dist>=K.THREE_ARC?ctx.ch.attributes.three:ctx.ch.attributes.mid) : 85;
+    const base=ctx.difficulty==='casual'?.045+rating*.00055:.024+rating*.00028;
+    const body=ctx.body||{},motion=Math.hypot(body.vx||0,body.vz||0),over=Math.max(0,plan.dist-ctx.d.comfort);
+    const half=Math.max(.018,base/(1+over*.18+motion*.12)*(1-(ctx.contest||0)*.50));
+    return {lo:-half,hi:half,best:0,width:half*2,assisted:true};
   }
   // Shot-meter window for the shot that is starting: { lo, hi, best, width } in seconds of timing error.
   function shotWindow(ctx) {
     const plan = planShot({ hoop: ctx.hoop, pos: ctx.idealPos, d: ctx.d, ch: ctx.ch, p: ctx.p, difficulty: ctx.difficulty });
-    const win = timingWindow(plan, { posAtE: ctx.posAtE, body: ctx.bodyIdeal, offBalance: ctx.offBalance });
+    const win = assistWindow(ctx,plan)||timingWindow(plan, { posAtE: ctx.posAtE, body: ctx.bodyIdeal, offBalance: ctx.offBalance });
     win.plan = plan;
     return win;
   }
 
-  return { derive, planShot, resolveRelease, shotWindow, releaseFromPlan, evalCross, timingWindow, sensitivity, rangeSens, makeRng, gradeTiming,
+  return { derive, planShot, resolveRelease, shotWindow, releaseFromPlan, assistWindow, evalCross, timingWindow, sensitivity, rangeSens, makeRng, gradeTiming,
            KT, KA, KG, KE, DIFFICULTY, VARIANCE, AIM_PAST };
 })();
 if (typeof module !== 'undefined') module.exports = HoopShot;

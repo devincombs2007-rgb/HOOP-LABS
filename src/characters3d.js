@@ -122,7 +122,12 @@ const HoopCharacters = (() => {
       }
       this.avatar.updateMatrixWorld(true);
       this.measure();
+      // Vertex colors are already linear. Reuse the neck's actual color and body surface response.
+      const neckSkin=this.ranges.get('NeckSkin'),skinColors=neckSkin.mesh.geometry.attributes.color,skinIndex=neckSkin.range[0];
+      this.skinColor=new THREE.Color().setRGB(skinColors.getX(skinIndex),skinColors.getY(skinIndex),skinColors.getZ(skinIndex));
+      this.skinMaterial=new THREE.MeshStandardMaterial({color:this.skinColor,roughness:bodyMaterial.roughness,metalness:bodyMaterial.metalness});
       this.setLettering(def.plate, def.number, '#ffffff');
+      this.hands=buildHands(this,def);
       this.head = (typeof HoopHead !== 'undefined' && HoopHead.attach) ? HoopHead.attach(this, def) : null;
       this.root.traverse(o => { if (o.isMesh) { o.castShadow = o.castShadow !== false; o.frustumCulled = false; } });
     }
@@ -207,6 +212,25 @@ const HoopCharacters = (() => {
     }
   }
 
+  function buildHands(model,def){
+    const hs=def.heightM/1.9812/model.dims.scale;
+    const skin=model.skinMaterial,sphere=new THREE.SphereGeometry(1,12,8);
+    return model.limbs.map((limb,side)=>{
+      for(const mesh of limb.wrist.children)mesh.visible=false;
+      const root=new THREE.Group();root.name='ArticulatedHand';limb.wrist.add(root);
+      const palm=new THREE.Mesh(sphere,skin);palm.position.y=-.065*hs;palm.scale.set(.047*hs,.066*hs,.024*hs);root.add(palm);
+      const fingers=[];
+      for(let i=0;i<5;i++){
+        const thumb=i===4,lengths=thumb?[.033,.029,.023]:[.042,.029,.022].map(l=>l*(i===0?.95:i===3?.82:1));
+        const base=new THREE.Group();base.name=['Index','Middle','Ring','Little','Thumb'][i];
+        base.position.set((thumb?(side===0?1:-1)*.047:(i-1.5)*.023)*hs,(thumb?-.06:-.11)*hs,0);if(thumb)base.rotation.z=(side===0?1:-1)*.65;
+        root.add(base);let parent=base;const joints=[];
+        for(let j=0;j<3;j++){const joint=new THREE.Group();parent.add(joint);const len=lengths[j]*hs,mesh=new THREE.Mesh(sphere,skin);mesh.position.y=-len*.5;mesh.scale.set((thumb?.012:.009)*hs,len*.57,.009*hs);joint.add(mesh);joints.push(joint);const end=new THREE.Group();end.position.y=-len;joint.add(end);parent=end;}
+        fingers.push({base,joints,tip:parent,contact:0});
+      }
+      return {root,fingers,grip:0};
+    });
+  }
   // ------------------------------------------------------------------ IK pose application
   const V3 = () => new THREE.Vector3(), Q = () => new THREE.Quaternion();
   const T = { a: V3(), mid: V3(), end: V3(), d: V3(), dir: V3(), pp: V3(), d1: V3(), d2: V3(), b: V3(), X: V3(), Y: V3(), Z: V3(),
@@ -314,6 +338,15 @@ const HoopCharacters = (() => {
   // per-frame extras (faces, eyes, cloth): called by the game after applyPose
   function update(model, dt, pose) {
     if (model.head && model.head.update) model.head.update(dt, pose);
+    if(model.hands)for(let i=0;i<2;i++){
+      const hand=model.hands[i],grip=pose.hands[i].grip??.2;hand.grip=grip;
+      for(let j=0;j<hand.fingers.length;j++){
+        const finger=hand.fingers[j],curl=grip*(j===4?.8:1);
+        for(let k=0;k<3;k++)finger.joints[k].rotation.x=curl*[.72,1.05,.62][k];
+        if(j<4)finger.base.rotation.z=(j-1.5)*.045*(1-grip);
+        finger.contact=grip*(j===0?.28:j===1?.26:j===2?.20:j===3?.10:.16);
+      }
+    }
   }
 
   // ------------------------------------------------------------------ loading
@@ -325,7 +358,9 @@ const HoopCharacters = (() => {
       const b64 = assets[def.file];
       if (!b64) throw new Error(`Character file ${def.file} is not bundled`);
       const gltf = await parseGLB(b64ToBuffer(b64));
+      if(def.id==='devin'){const box=new THREE.Box3().setFromObject(gltf.scene),height=box.max.y-box.min.y;gltf.scene.scale.multiplyScalar(def.heightM/height);gltf.scene.updateMatrixWorld(true);}
       out[def.id] = new CharacterModel(def, gltf, bodyMaterial);
+      if(def.id==='devin')out[def.id].setColors(def.colors);
       if (onProgress) onProgress(++i / defs.length, def);
     }
     return { models: out, bodyMaterial };

@@ -105,6 +105,10 @@ const HoopModes = (() => {
       cfg: [{ key: 'perSpot', label: 'Shots per spot', options: [{ v: 5, l: '5' }, { v: 10, l: '10' }, { v: 20, l: '20' }], def: 10 },
             { key: 'target', label: 'Target', options: [{ v: 0.4, l: '40%' }, { v: 0.5, l: '50%' }, { v: 0.6, l: '60%' }, { v: 0.7, l: '70%' }], def: 0.5 },
             { key: 'rapid', label: 'Ball return', options: [{ v: false, l: 'Rebounder' }, { v: true, l: 'Rapid rack' }], def: false }] },
+    { id: 'one', name: '1v1 vs AI', kind: 'Match', desc: 'First to 11 by two. 1s and 2s; alternate possessions after every attempt. 14-second shot clock.',
+      rules: ['First to 11, win by two', 'Shots inside the arc count 1, threes count 2', 'Possession alternates after every attempt; 14-second shot clock'], cfg: [] },
+    { id: 'watch', name: 'Watch AI vs AI', kind: 'Match', desc: 'Two AI players compete using the same shot physics. Games restart automatically; camera controls remain available.',
+      rules: ['Sit back and watch two AI players play to 11', 'Every shot uses the same physics as yours', 'Games restart automatically'], cfg: [] },
   ];
   const info = (id) => MODE_INFO.find(m => m.id === id);
   function defaultCfg(id) {
@@ -142,8 +146,8 @@ const HoopModes = (() => {
       end() { return this.finish ? this.finish() : []; } };
     const doneEv = (o) => Object.assign({ type: 'done', mode: id, lines: [], rows: [], spots: [], newBest: false }, o);
 
-    if (id === 'free') {
-      return ({ ...base,
+    if (id === 'free' || id === 'one' || id === 'watch') {
+      return ({ ...base, ballReturn: id === 'free' ? null : 'manual',
         canShoot() { return true; }, onRelease() { return []; }, onResult() { return []; }, update() { return []; },
         end() { return []; }, hud() { return null; }, summary() { return null; },
       });
