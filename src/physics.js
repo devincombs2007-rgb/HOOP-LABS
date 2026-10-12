@@ -18,6 +18,9 @@ const HoopPhysics = (() => {
     CL_PER_S: 1.0,           // Magnus lift slope dCL/dS at low spin parameter S = r*w_perp/v
     CL_MAX: 0.5,             // lift saturates at high spin: CL = S / (1/CL_PER_S + S/CL_MAX)  (= S/(1+2S))
     SPIN_DECAY: 0.0022,      // 1/m: aerodynamic spin-down dw/dt = -SPIN_DECAY*|v|*w (~1.8 %/s at 8 m/s)
+    BALL_E0: 0.862,          // ball COR on rigid hardwood at zero speed ...
+    BALL_E_SLOPE: 0.0125,    // ... falling 0.0125 per m/s (viscoelastic): 6 m/s (72 in drop) -> 0.79
+    BALL_E_MIN: 0.55,
     BALL_BALL_E: 0.78,       // ball-ball restitution (two inflated balls; ~ball on hardwood at half the speed)
     BALL_BALL_MU: 0.55,      // pebbled rubber on pebbled rubber
     COURT_HALF_L: 14.325,    // 94 ft court
@@ -55,15 +58,20 @@ const HoopPhysics = (() => {
   K.LANE_W = 4.877; K.LANE_L = 5.791; K.FT_CIRCLE_R = 1.829; K.RA_R = 1.219;
   K.CENTER_R = 1.829; K.CENTER_INNER_R = 0.61; K.HASH_FROM_BASE = 8.534;
 
+  // Contact materials. Restitution = ballCOR(normal impact speed) * e, where ballCOR is the ball's own
+  // viscoelastic COR on a rigid surface (BALL_E0 - BALL_E_SLOPE*v, see K) and e is the surface factor
+  // (1 = rigid hardwood; <1 = the surface itself absorbs energy). mu = Coulomb friction (spin coupling).
   const MAT = {
-    floor:   { e: 0.88, mu: 0.55 },
-    rim:     { e: 0.60, mu: 0.30 },
-    neck:    { e: 0.45, mu: 0.30 },
-    board:   { e: 0.66, mu: 0.22 },
-    pad:     { e: 0.32, mu: 0.50 },
-    wall:    { e: 0.50, mu: 0.40 },
-    bleach:  { e: 0.45, mu: 0.50 },
+    floor:   { e: 1.00, mu: 0.55 },  // NBA spec: 72 in drop -> 49-54 in bounce (top of ball)
+    rim:     { e: 0.86, mu: 0.42 },  // steel ring, further reduced by location-dependent compliance (sphereRim)
+    neck:    { e: 0.70, mu: 0.40 },  // bracket / spring housing
+    board:   { e: 0.88, mu: 0.25 },  // tempered glass in a padded frame: e ~0.65-0.7, low friction
+    pad:     { e: 0.42, mu: 0.50 },
+    wall:    { e: 0.65, mu: 0.40 },
+    bleach:  { e: 0.58, mu: 0.50 },
   };
+  // ball's own coefficient of restitution vs normal impact speed (inflated size-7 ball on a rigid surface)
+  function ballCOR(v) { const e = K.BALL_E0 - K.BALL_E_SLOPE * v; return e < K.BALL_E_MIN ? K.BALL_E_MIN : e; }
 
   // ---------------------------------------------------------------- hoops
   function makeHoop(side) { // side = +1 (x>0 end) or -1
@@ -96,20 +104,20 @@ const HoopPhysics = (() => {
       resting: false, restTime: 0, airTime: 0,
       onFloor: false,
       // per-hoop scoring state
-      hs: [ { prevY: 0, entered: false, entryVx: 0, entryVy: 0, entryVz: 0, scored: false },
-            { prevY: 0, entered: false, entryVx: 0, entryVy: 0, entryVz: 0, scored: false } ],
+      hs: [ { prevY: 0, entered: false, entryVx: 0, entryVy: 0, entryVz: 0, scored: false, above: false },
+            { prevY: 0, entered: false, entryVx: 0, entryVy: 0, entryVz: 0, scored: false, above: false } ],
     };
   }
 
   function placeBall(b, x, y, z, vx = 0, vy = 0, vz = 0, wx = 0, wy = 0, wz = 0) {
     b.px = x; b.py = y; b.pz = z; b.vx = vx; b.vy = vy; b.vz = vz; b.wx = wx; b.wy = wy; b.wz = wz;
     b.resting = false; b.restTime = 0; b.airTime = 0;
-    for (const h of b.hs) { h.prevY = y; h.entered = false; h.scored = false; }
+    for (let i = 0; i < 2; i++) { const h = b.hs[i]; h.prevY = y; h.entered = false; h.scored = false; h.above = false; }
   }
 
   // ---------------------------------------------------------------- contact resolution
   // n = unit normal pointing from surface toward ball center; pen = penetration depth (>0)
-  function resolve(b, nx, ny, nz, pen, mat, kind, hoopIdx, ev) {
+  function resolve(b, nx, ny, nz, pen, mat, kind, hoopIdx, ev, eMul = 1) {
     b.px += nx * pen; b.py += ny * pen; b.pz += nz * pen;
     const vn = b.vx * nx + b.vy * ny + b.vz * nz;
     if (vn >= 0) return 0;
@@ -125,7 +133,7 @@ const HoopPhysics = (() => {
     const speedN = -vn;
     // restitution fades at low impact speed so the ball can come to rest / roll on a surface
     const fade = speedN < 0.06 ? 0 : speedN > 0.35 ? 1 : (speedN - 0.06) / 0.29;
-    const e = mat.e * fade;
+    const e = ballCOR(speedN) * mat.e * eMul * fade;
     const jn = (1 + e) * speedN * m;
     let jt = 0;
     if (vt > 1e-9) {
@@ -156,13 +164,13 @@ const HoopPhysics = (() => {
       const d = Math.sqrt(d2);
       resolve(b, dx / d, dy / d, dz / d, r - d, mat, kind, hi, ev);
     } else { // center inside the box: push out along the axis of least penetration
-      const opts = [
-        [b.px - box.minX, -1, 0, 0], [box.maxX - b.px, 1, 0, 0],
-        [b.py - box.minY, 0, -1, 0], [box.maxY - b.py, 0, 1, 0],
-        [b.pz - box.minZ, 0, 0, -1], [box.maxZ - b.pz, 0, 0, 1]];
-      opts.sort((a, c) => a[0] - c[0]);
-      const o = opts[0];
-      resolve(b, o[1], o[2], o[3], o[0] + r, mat, kind, hi, ev);
+      let d = b.px - box.minX, ox = -1, oy = 0, oz = 0, t;   // least-penetration axis (allocation-free)
+      if ((t = box.maxX - b.px) < d) { d = t; ox = 1; }
+      if ((t = b.py - box.minY) < d) { d = t; ox = 0; oy = -1; }
+      if ((t = box.maxY - b.py) < d) { d = t; ox = 0; oy = 1; }
+      if ((t = b.pz - box.minZ) < d) { d = t; ox = 0; oy = 0; oz = -1; }
+      if ((t = box.maxZ - b.pz) < d) { d = t; ox = 0; oy = 0; oz = 1; }
+      resolve(b, ox, oy, oz, d + r, mat, kind, hi, ev);
     }
     return true;
   }
@@ -190,7 +198,19 @@ const HoopPhysics = (() => {
     const dx = b.px - qx, dy = b.py - qy, dz = b.pz - qz;
     const d = Math.hypot(dx, dy, dz), lim = K.BALL_R + K.RIM_TUBE;
     if (d >= lim || d < 1e-9) return false;
-    resolve(b, dx / d, dy / d, dz / d, lim - d, MAT.rim, 'rim', hi, ev);
+    const nx = dx / d, ny = dy / d, nz = dz / d;
+    // Ring compliance. The ring is cantilevered from the bracket at the back and the breakaway spring
+    // sits there too: the back is stiff, the front (farthest from the support) flexes down and soaks up
+    // energy -- mostly for impacts from above. Ring + net damping also eat a larger share of slow,
+    // "soft touch" contacts, so soft shots die on the rim (the shooter's roll); hard impacts on the
+    // front load the breakaway spring (NBA breakaway releases around 1 kN, ~6 m/s ball impact).
+    const front = 0.5 * (1 - ux * H.side);                  // 0 at the bracket, 1 at the front of the ring
+    const down = ny > 0 ? ny : 0;                           // ball above the tube
+    const vn = -(b.vx * nx + b.vy * ny + b.vz * nz);
+    const soft = vn < 0.6 ? 1 : vn > 2.2 ? 0 : (2.2 - vn) / 1.6;
+    const brk = vn < 4.5 ? 0 : vn > 7.5 ? 1 : (vn - 4.5) / 3;
+    const loss = front * (0.10 + 0.16 * down) + down * (0.12 * soft + 0.12 * brk * front);
+    resolve(b, nx, ny, nz, lim - d, MAT.rim, 'rim', hi, ev, 1 - loss);
     return true;
   }
 
@@ -345,8 +365,6 @@ const HoopPhysics = (() => {
         }
         b.wy *= Math.exp(-2.5 * h);
       }
-      const wd = Math.exp(-0.04 * h);
-      b.wx *= wd; b.wy *= wd; b.wz *= wd;
       integrateOrientation(b, h);
       // scoring: ball center crossing the plane of the ring top, downward, inside the inner ring
       for (let hi = 0; hi < 2; hi++) {
@@ -355,9 +373,14 @@ const HoopPhysics = (() => {
         const rho = Math.hypot(rx, rz);
         if (prevY >= K.RIM_TOP && b.py < K.RIM_TOP && b.vy < 0 && Math.abs(rx) < 2.5) {
           if (sev) sev('cross', hi, { rho, x: b.px, z: b.pz, vx: b.vx, vy: b.vy, vz: b.vz });
-          if (rho < K.RIM_IN_R && !st.scored) {
-            st.entered = true; st.entryVx = b.vx; st.entryVy = b.vy; st.entryVz = b.vz;
-          }
+        }
+        // the ball must come from above the ring (st.above) and its center must be inside the inner ring
+        // while just below the ring top. Also catches balls that roll around the rim and drop in with the
+        // center crossing the plane outside RIM_IN_R (resting on the tube) and only then falling inside.
+        if (b.py >= K.RIM_TOP && rho < K.RIM_R + K.BALL_R) st.above = true;
+        else if (b.py < K.RIM_TOP - 0.45 || rho > 1.2) st.above = false;
+        if (st.above && !st.entered && !st.scored && b.vy < 0 && b.py < K.RIM_TOP && b.py > K.RIM_TOP - 0.22 && rho < K.RIM_IN_R) {
+          st.entered = true; st.entryVx = b.vx; st.entryVy = b.vy; st.entryVz = b.vz;
         }
         if (st.entered && !st.scored) {
           if (b.py > K.RIM_TOP + 0.05) st.entered = false;          // popped back out

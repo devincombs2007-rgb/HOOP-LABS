@@ -84,10 +84,10 @@ function shoot(pos, hoop, d, p, ch, e = 0, opts = {}) {
   while (t < 3) {
     const vy0 = b.vy; PH.step(b, K.PHYS_DT); t += K.PHYS_DT;
     if (!bounced && vy0 < 0 && b.vy > 0) bounced = true;
-    if (bounced) { apex = Math.max(apex, b.py - K.BALL_R); if (b.vy < 0) break; }
+    if (bounced) { apex = Math.max(apex, b.py + K.BALL_R); if (b.vy < 0) break; }
   }
   const inch = apex / 0.0254;
-  check('Ball dropped from 72 in rebounds 49-56 in (regulation inflation test)', inch > 49 && inch < 56, `rebound ${inch.toFixed(1)} in`);
+  check('Ball dropped from 72 in (bottom) rebounds 49-54 in to the top of the ball (NBA inflation rule)', inch >= 49 && inch <= 54, `rebound ${inch.toFixed(1)} in`);
   let tt = 0; while (!b.resting && tt < 30) { PH.step(b, K.PHYS_DT); tt += K.PHYS_DT; }
   check('Bouncing ball loses energy and comes to rest', b.resting, `rested after ${tt.toFixed(1)} s more`);
 }
