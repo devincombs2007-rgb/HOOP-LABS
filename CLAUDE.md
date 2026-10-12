@@ -3,6 +3,16 @@
 3D basketball shootaround simulator for the browser (Three.js r147 + custom physics). The full original
 spec is in `docs/SPEC.md`. This file is the current state and the plan for finishing it.
 
+## Update — integration baseline (multi-agent phase)
+
+The game is now wired together and playable: `src/game.js` (fixed-step loop, shot flow from input
+timestamps, physics-resolved make/miss classification, ball return, modes, replay recording,
+`window.HOOP` automation API), `src/ui.js` + `src/style.css` + `index.html` (menu/character select,
+HUD, shot meter, results), `build/build.js` (single-file `dist/hoop-lab.html`), `build/serve.js`
+(`npm start`), and `tests/e2e/smoke.test.js` (`npm run test:e2e`, real game in headless Chromium).
+Characters are now Stephen Curry / LeBron James / Michael Jordan (ids `curry`, `lebron`, `jordan`).
+**Module ownership and the interfaces every module must keep are in `docs/TEAM.md`.**
+
 ## Status at handoff
 
 **Done and tested in Node** (`npm test` → 42 tests, all passing):

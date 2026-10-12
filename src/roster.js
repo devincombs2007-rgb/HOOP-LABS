@@ -44,36 +44,36 @@ const HoopRoster = (() => {
   ];
 
   // Playable characters. Each loads the supplied GLB from the character pack.
-  // Names are original role names; the back-of-jersey plate shows the editable player name.
+  // The back-of-jersey plate shows the (editable) player name. Uniforms use generic team colorways, no official crests.
   const CHARACTERS = [
     {
-      id: 'guard30', file: 'stephen_curry.glb', name: 'Range Guard', plate: 'RANGE', number: '30',
+      id: 'curry', file: 'stephen_curry.glb', name: 'Stephen Curry', short: 'Curry', plate: 'CURRY', number: '30',
       role: 'Point guard', heightM: 1.8796, massKg: 91,
       colors: { jersey: '#1C54A3', accent: '#F6C84A', shorts: '#1C54A3', shoe: '#E7EAE6', sole: '#E2BD4B' },
       blurb: 'Lightning one-motion release from anywhere. Tight, low handle and the best shooting on the move.',
       move: { walk: 1.5, jog: 4.0, sprint: 7.3, accel: 11.0, decel: 13.5, turn: 12.0, dribbleHz: 2.7, dribbleTop: 0.78, stepback: 1.05, maxLeap: 0.66, crossTime: 0.30 },
       shoot: { baseRange: 10.2, kMul: 0.86, kMulMid: 0.86, moveComp: 0.94, releaseMul: 0.92, heave: 1.05 },
-      sig: { id: 'sig', name: 'Signature: Range Guard', params: P({ pocket: .48, dip: .22, motion: 0, setPoint: .58, extension: .42, speed: .95, arc: .62, elbow: .1, guide: .18, flick: .66, knee: .56, jump: .32, releaseTiming: .28, footWidth: .44, footStagger: .28, lean: .04 }) },
+      sig: { id: 'sig', name: 'Signature: Stephen Curry', params: P({ pocket: .48, dip: .22, motion: 0, setPoint: .58, extension: .42, speed: .95, arc: .62, elbow: .1, guide: .18, flick: .66, knee: .56, jump: .32, releaseTiming: .28, footWidth: .44, footStagger: .28, lean: .04 }) },
       attrs: { Range: 97, Release: 98, 'Shot IQ on the move': 96, Strength: 62, Speed: 86, Elevation: 70 },
     },
     {
-      id: 'forward23', file: 'lebron_james.glb', name: 'Point Forward', plate: 'FORWARD', number: '23',
+      id: 'lebron', file: 'lebron_james.glb', name: 'LeBron James', short: 'LeBron', plate: 'JAMES', number: '23',
       role: 'Forward', heightM: 2.0574, massKg: 113,
       colors: { jersey: '#542A80', accent: '#EEB84E', shorts: '#542A80', shoe: '#F4EDDD', sole: '#6D4BAC' },
       blurb: 'Huge frame and top-end speed. Set point in front of the face, strong two-foot base, power step-back.',
       move: { walk: 1.6, jog: 4.3, sprint: 8.1, accel: 8.4, decel: 9.8, turn: 8.5, dribbleHz: 2.1, dribbleTop: 0.82, stepback: 1.2, maxLeap: 0.8, crossTime: 0.36 },
       shoot: { baseRange: 9.4, kMul: 1.02, kMulMid: 1.0, moveComp: 0.84, releaseMul: 1.06, heave: 1.3 },
-      sig: { id: 'sig', name: 'Signature: Point Forward', params: P({ pocket: .58, dip: .2, motion: .45, setPoint: .7, extension: .4, speed: .55, arc: .45, elbow: .22, guide: .3, flick: .58, knee: .45, jump: .38, releaseTiming: .62, footWidth: .7, footStagger: .35, lean: -.02 }) },
+      sig: { id: 'sig', name: 'Signature: LeBron James', params: P({ pocket: .58, dip: .2, motion: .45, setPoint: .7, extension: .4, speed: .55, arc: .45, elbow: .22, guide: .3, flick: .58, knee: .45, jump: .38, releaseTiming: .62, footWidth: .7, footStagger: .35, lean: -.02 }) },
       attrs: { Range: 84, Release: 80, 'Shot IQ on the move': 82, Strength: 98, Speed: 92, Elevation: 88 },
     },
     {
-      id: 'wing23', file: 'michael_jordan.glb', name: 'Aerial Wing', plate: 'WING', number: '23',
+      id: 'jordan', file: 'michael_jordan.glb', name: 'Michael Jordan', short: 'Jordan', plate: 'JORDAN', number: '23',
       role: 'Shooting guard', heightM: 1.9812, massKg: 98,
       colors: { jersey: '#C91F37', accent: '#F2F2F0', shorts: '#C91F37', shoe: '#F5F5F5', sole: '#CC2D37' },
       blurb: 'Explosive leaper with a high release at the apex. Lethal midrange fadeaway, sharp footwork.',
       move: { walk: 1.6, jog: 4.2, sprint: 7.9, accel: 10.2, decel: 12.8, turn: 10.5, dribbleHz: 2.35, dribbleTop: 0.8, stepback: 0.95, maxLeap: 0.95, crossTime: 0.32 },
       shoot: { baseRange: 8.6, kMul: 0.98, kMulMid: 0.74, moveComp: 0.89, releaseMul: 1.0, heave: 1.1 },
-      sig: { id: 'sig', name: 'Signature: Aerial Wing', params: P({ pocket: .62, dip: .25, motion: .55, setPoint: .9, extension: .3, speed: .62, arc: .5, elbow: .08, guide: .2, flick: .78, knee: .5, jump: .78, releaseTiming: .95, footWidth: .45, footStagger: .38, lean: -.18 }) },
+      sig: { id: 'sig', name: 'Signature: Michael Jordan', params: P({ pocket: .62, dip: .25, motion: .55, setPoint: .9, extension: .3, speed: .62, arc: .5, elbow: .08, guide: .2, flick: .78, knee: .5, jump: .78, releaseTiming: .95, footWidth: .45, footStagger: .38, lean: -.18 }) },
       attrs: { Range: 78, Release: 90, 'Shot IQ on the move': 88, Strength: 80, Speed: 90, Elevation: 99 },
     },
   ];

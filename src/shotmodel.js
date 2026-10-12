@@ -145,7 +145,28 @@ const HoopShot = (() => {
     return eMs < 0 ? 'Very early' : 'Very late';
   }
 
-  return { derive, planShot, releaseFromPlan, evalCross, timingWindow, sensitivity, rangeSens, makeRng, gradeTiming,
+
+  // ---------------------------------------------------------------- game entry points
+  // The game loop only talks to these two functions; everything about how a release becomes a
+  // ball launch lives in this module. ctx (plain data, built by game.js):
+  //   hoop, idealPos {x,y,z} (ball at the ideal release instant), pos {x,y,z} (actual release point),
+  //   eSec (timing error, + = late), body {vx,vy,vz} (shooter velocity at release),
+  //   bodyIdeal {vx,vy,vz} (at the ideal instant), offBalance, d (derive()), ch (character def),
+  //   p (jumper params), difficulty, variance, rng, posAtE(e) -> {x,y,z} (release point for error e)
+  function resolveRelease(ctx) {
+    const plan = planShot({ hoop: ctx.hoop, pos: ctx.idealPos, d: ctx.d, ch: ctx.ch, p: ctx.p, difficulty: ctx.difficulty });
+    const rel = releaseFromPlan(plan, { e: ctx.eSec, body: ctx.body, offBalance: ctx.offBalance, variance: ctx.variance, rng: ctx.rng });
+    return { plan, rel };
+  }
+  // Shot-meter window for the shot that is starting: { lo, hi, best, width } in seconds of timing error.
+  function shotWindow(ctx) {
+    const plan = planShot({ hoop: ctx.hoop, pos: ctx.idealPos, d: ctx.d, ch: ctx.ch, p: ctx.p, difficulty: ctx.difficulty });
+    const win = timingWindow(plan, { posAtE: ctx.posAtE, body: ctx.bodyIdeal, offBalance: ctx.offBalance });
+    win.plan = plan;
+    return win;
+  }
+
+  return { derive, planShot, resolveRelease, shotWindow, releaseFromPlan, evalCross, timingWindow, sensitivity, rangeSens, makeRng, gradeTiming,
            KT, KA, KG, KE, DIFFICULTY, VARIANCE, AIM_PAST };
 })();
 if (typeof module !== 'undefined') module.exports = HoopShot;

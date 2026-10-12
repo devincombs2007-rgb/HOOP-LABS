@@ -1,11 +1,14 @@
 {
   "name": "hoop-lab",
   "version": "1.0.0",
-  "description": "HOOP LAB — 3D basketball shootaround simulator",
+  "description": "HOOP LAB — realistic 3D basketball shootaround simulator",
   "main": "index.js",
   "scripts": {
     "test": "node tests/physics.test.js && node tests/logic.test.js",
+    "test:e2e": "node build/make_assets.js && node tests/e2e/smoke.test.js",
     "assets": "node build/make_assets.js",
+    "build": "node build/make_assets.js && node build/build.js",
+    "start": "node build/make_assets.js && node build/serve.js",
     "rig-test": "node build/make_assets.js && python3 tests/rig_shots2.py tests/shots"
   },
   "keywords": [],
@@ -13,5 +16,8 @@
   "license": "ISC",
   "dependencies": {
     "three": "^0.147.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.1"
   }
 }
