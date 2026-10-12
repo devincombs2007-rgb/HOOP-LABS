@@ -123,6 +123,7 @@ const HoopCharacters = (() => {
       this.avatar.updateMatrixWorld(true);
       this.measure();
       this.setLettering(def.plate, def.number, '#ffffff');
+      this.head = (typeof HoopHead !== 'undefined' && HoopHead.attach) ? HoopHead.attach(this, def) : null;
       this.root.traverse(o => { if (o.isMesh) { o.castShadow = o.castShadow !== false; o.frustumCulled = false; } });
     }
 
@@ -273,6 +274,7 @@ const HoopCharacters = (() => {
   // pose: { rootX, rootZ, rootYaw, pelvis:Vector3, pelvisQ:Quaternion, chestQ:Quaternion, headYaw, headPitch,
   //         hands:[{wrist:Vector3, pole:Vector3, fingers:Vector3, palm:Vector3}x2], feet:[{ankle, pole, fwd, up}x2] }
   function applyPose(model, pose) {
+    if (typeof HoopRig !== 'undefined' && HoopRig.applyPose) return HoopRig.applyPose(model, pose);
     const N = model.nodes, d = model.dims;
     model.root.position.set(pose.rootX, 0, pose.rootZ);
     model.root.rotation.set(0, 0, 0);
@@ -309,6 +311,11 @@ const HoopCharacters = (() => {
     }
   }
 
+  // per-frame extras (faces, eyes, cloth): called by the game after applyPose
+  function update(model, dt, pose) {
+    if (model.head && model.head.update) model.head.update(dt, pose);
+  }
+
   // ------------------------------------------------------------------ loading
   async function loadAll(defs, assets, onProgress) {
     const bodyMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.0 });
@@ -324,5 +331,5 @@ const HoopCharacters = (() => {
     return { models: out, bodyMaterial };
   }
 
-  return { loadAll, applyPose, solveTwoBone, CharacterModel, PIVOTS, b64ToBuffer, parseGLB };
+  return { loadAll, applyPose, update, solveTwoBone, CharacterModel, PIVOTS, b64ToBuffer, parseGLB };
 })();

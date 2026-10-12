@@ -18,7 +18,8 @@ const HoopUI = (() => {
     game.on('replay', (on) => { $('#replay-tag').classList.toggle('hidden', !on); });
     game.on('character', () => { refreshMenu(); });
     game.on('ui', (type) => {
-      if (type === 'pause') { if (menuOpen) return; game.setPaused(!G.paused); }
+      if (type === 'stats') { if (typeof HoopStatsUI !== 'undefined' && !menuOpen) { game.setPaused(true); HoopStatsUI.open(() => game.setPaused(false)); } }
+      else if (type === 'pause') { if (menuOpen) return; game.setPaused(!G.paused); }
       else if (type === 'hud') { G.settings.hud = !G.settings.hud; document.body.classList.toggle('hud-off', !G.settings.hud); }
       else if (type === 'fullscreen') { if (!document.fullscreenElement) document.documentElement.requestFullscreen?.(); else document.exitFullscreen?.(); }
       else if (type === 'gamepadConnected') toast('Controller connected', 'info');
@@ -28,6 +29,8 @@ const HoopUI = (() => {
     $('#btn-menu').onclick = () => { game.setPaused(true); showMenu(true); };
     $('#btn-done-again').onclick = () => { $('#results').classList.add('hidden'); game.startMode(G.mode.id, G.mode.cfg || {}); };
     $('#btn-done-free').onclick = () => { $('#results').classList.add('hidden'); game.startMode('free'); };
+    if (typeof HoopJSC !== 'undefined') HoopJSC.init(game, $('#jsc'));
+    if (typeof HoopStatsUI !== 'undefined') HoopStatsUI.init(game, $('#stats'));
   }
 
   // ---------------------------------------------------------------- menu
@@ -49,6 +52,8 @@ const HoopUI = (() => {
     ms.onchange();
     const q = $('#set-quality'); q.value = G.settings.quality; q.onchange = () => game.setSetting('quality', q.value);
     const d = $('#set-diff'); d.value = G.settings.difficulty; d.onchange = () => game.setSetting('difficulty', d.value);
+    $('#btn-jsc').onclick = () => { $('#menu').classList.add('hidden'); HoopJSC.open(() => $('#menu').classList.remove('hidden')); };
+    $('#btn-stats').onclick = () => { $('#menu').classList.add('hidden'); HoopStatsUI.open(() => $('#menu').classList.remove('hidden')); };
     $('#btn-play').onclick = () => { showMenu(false); game.startMode(ms.value); game.setPaused(false); if (HoopAudio.ready) HoopAudio.S.ui('confirm'); };
     refreshMenu();
   }

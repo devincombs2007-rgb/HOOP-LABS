@@ -239,18 +239,21 @@ const HoopWorld = (() => {
     scene.environment = W.envMap;
     pmrem.dispose();
 
-    // lights
-    W.hemi = new THREE.HemisphereLight(0xfff1dd, 0x3a2a1c, 0.55); scene.add(W.hemi);
-    W.sun = new THREE.DirectionalLight(0xfff4e6, 1.25);
-    W.sun.position.set(4, 14, 3);
-    W.sun.castShadow = Q.shadows;
-    W.sun.shadow.mapSize.set(Q.shadowSize, Q.shadowSize);
-    const sc = W.sun.shadow.camera; sc.left = -9; sc.right = 9; sc.top = 9; sc.bottom = -9; sc.near = 1; sc.far = 40;
-    W.sun.shadow.bias = -0.0004; W.sun.shadow.normalBias = 0.02;
-    scene.add(W.sun); scene.add(W.sun.target);
-    const fill = new THREE.DirectionalLight(0xdfe8ff, 0.35); fill.position.set(-6, 9, -8); scene.add(fill);
-    // court "pools" of light over each basket (no shadows)
-    for (const s of [1, -1]) { const pl = new THREE.PointLight(0xfff0d8, 0.6, 26, 1.6); pl.position.set(s * 9, 12, 0); scene.add(pl); }
+    // lights (the Graphics role's HoopLighting rig replaces this block when present)
+    if (typeof HoopLighting !== 'undefined' && HoopLighting.build) HoopLighting.build(scene, W, Q, renderer);
+    else {
+      W.hemi = new THREE.HemisphereLight(0xfff1dd, 0x3a2a1c, 0.55); scene.add(W.hemi);
+      W.sun = new THREE.DirectionalLight(0xfff4e6, 1.25);
+      W.sun.position.set(4, 14, 3);
+      W.sun.castShadow = Q.shadows;
+      W.sun.shadow.mapSize.set(Q.shadowSize, Q.shadowSize);
+      const sc = W.sun.shadow.camera; sc.left = -9; sc.right = 9; sc.top = 9; sc.bottom = -9; sc.near = 1; sc.far = 40;
+      W.sun.shadow.bias = -0.0004; W.sun.shadow.normalBias = 0.02;
+      scene.add(W.sun); scene.add(W.sun.target);
+      const fill = new THREE.DirectionalLight(0xdfe8ff, 0.35); fill.position.set(-6, 9, -8); scene.add(fill);
+      // court "pools" of light over each basket (no shadows)
+      for (const s of [1, -1]) { const pl = new THREE.PointLight(0xfff0d8, 0.6, 26, 1.6); pl.position.set(s * 9, 12, 0); scene.add(pl); }
+    }
 
     // floor
     const courtCanvas = drawCourt(Q.ppm);
