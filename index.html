@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>HOOP LAB</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Big+Shoulders+Display:wght@600;700;800;900&display=swap">
+<link rel="stylesheet" href="src/style.css">
+<link rel="stylesheet" href="src/ui/jsc.css">
+<link rel="stylesheet" href="src/ui/stats.css">
+</head>
+<body class="in-menu">
+<div id="app"></div>
+
+<div id="loading">
+  <div class="logo">HOOP <span>LAB</span></div>
+  <div class="load-track"><div id="load-bar"></div></div>
+  <div id="load-label">Starting</div>
+  <div class="load-hint">Stuck here? This viewer is blocking the game. Open the file in Chrome, Safari or Edge (or paste it into an HTML host).</div>
+  <noscript><div style="color:#FF6B5A">JavaScript is disabled here: open this file in a regular web browser.</div></noscript>
+</div>
+
+<div id="hud">
+  <div id="mode-panel" class="panel"></div>
+  <div id="dist" class="chip"></div>
+  <div id="fps" class="chip dim"></div>
+  <div id="meter"><span class="meter-label">Release in green</span><div id="meter-zone"></div><div id="meter-ideal"></div><div id="meter-fill"></div></div>
+  <div id="grade" class="grade"></div>
+  <div id="last-shot" class="panel"></div>
+  <div id="toast" class="toast"></div>
+  <div id="replay-tag" class="chip hidden">REPLAY · T to exit</div>
+  <div id="keys" class="dim">WASD move · Space shoot / contest · E dunk · X cross / steal · B / N / Z handles · V camera · Esc pause</div>
+</div>
+
+<div id="menu" class="hidden">
+  <div class="menu-inner">
+    <div class="logo">HOOP <span>LAB</span></div>
+    <div class="sub">Shootaround simulator</div>
+    <div id="char-cards"></div>
+    <div class="row">
+      <label>Mode <select id="mode-select"></select></label>
+      <label>Difficulty <select id="set-diff"><option value="casual">Casual</option><option value="pro">Pro</option><option value="sim">Simulation</option></select></label>
+      <label>Graphics <select id="set-quality"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="ultra">Ultra</option></select></label>
+      <button id="btn-jsc">Jump Shot Creator</button>
+      <label>Opponent<select id="opponent-select"></select></label>
+      <label>Coaching<select id="coach-select"><option value="balanced">Balanced</option><option value="spacing">Spacing</option><option value="rim">Attack the rim</option><option value="defense">Pressure defense</option></select></label>
+      <button id="btn-profile">Attributes &amp; badges</button>
+      <button id="btn-stats">Stats</button>
+      <button id="btn-play" class="primary">Play</button>
+    </div>
+    <div id="mode-desc" class="dim"></div>
+    <div class="play-help dim">Hold Shoot / Space and release at green. E dunk near the rim · B behind-back · N between-legs · Z hesitation. In 1v1, Shoot contests and Cross steals on defense. Landscape works best on phones.</div>
+  </div>
+</div>
+
+<div id="jsc" class="overlay screen hidden"></div>
+<div id="stats" class="overlay screen hidden"></div>
+<div id="profile" class="overlay screen hidden"></div>
+
+<div id="pause" class="overlay hidden">
+  <div class="card"><h2>Paused</h2><button id="btn-resume" class="primary">Resume</button><button id="btn-menu">Main menu</button></div>
+</div>
+<div id="results" class="overlay hidden">
+  <div class="card"><h2 id="results-title"></h2><div id="results-lines"></div><button id="btn-done-again" class="primary">Run it back</button><button id="btn-done-free">Free shootaround</button></div>
+</div>
+
+<div id="touch">
+  <div class="stick"><div class="stick-knob"></div></div>
+  <button data-touch="shoot" class="tbtn shoot">Shoot</button>
+  <button data-touch="cross" class="tbtn">Cross</button>
+  <button data-touch="stepback" class="tbtn">Step</button>
+  <button data-touch="ball" class="tbtn">Ball</button>
+  <button data-touch="camera" class="tbtn">Cam</button>
+  <button data-touch="pause" class="tbtn">II</button>
+  <button data-touch="handle" class="tbtn">Moves</button>
+  <button data-touch="dunk" class="tbtn">Dunk</button>
+</div>
+
+<!-- Build order: build/build.js inlines every script below, including Three.js. -->
+<script src="node_modules/three/build/three.min.js"></script>
+<script src="node_modules/three/examples/js/loaders/GLTFLoader.js"></script>
+<script src="src/physics.js"></script>
+<script src="src/roster.js"></script>
+<script src="src/profiles.js"></script>
+<script src="src/shotmodel.js"></script>
+<script src="src/stats.js"></script>
+<script src="src/modes.js"></script>
+<script src="src/assets.gen.js"></script>
+<script src="src/gfx/materials.js"></script>
+<script src="src/models/head.js"></script>
+<script src="src/rig.js"></script>
+<script src="src/characters3d.js"></script>
+<script src="src/anim.js"></script>
+<script src="src/anim/move.js"></script>
+<script src="src/anim/shot.js"></script>
+<script src="src/gfx/lighting.js"></script>
+<script src="src/world.js"></script>
+<script src="src/gfx/render.js"></script>
+<script src="src/audio.js"></script>
+<script src="src/input.js"></script>
+<script src="src/camera.js"></script>
+<script src="src/replay.js"></script>
+<script src="src/perf.js"></script>
+<script src="src/match.js"></script>
+<script src="src/ui/jsc.js"></script>
+<script src="src/ui/stats.js"></script>
+<script src="src/ui.js"></script>
+<script src="src/game.js"></script>
+<script>
+  HoopUI.init(HoopGame);
+  window.HOOP_READY = HoopGame.boot().catch((e) => {
+    console.error(e);
+    const l = document.getElementById('load-label'); if (l) l.textContent = 'Failed to start: ' + e.message;
+    throw e;
+  });
+</script>
+</body>
+</html>

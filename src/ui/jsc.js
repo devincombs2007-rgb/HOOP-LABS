@@ -1,0 +1,13 @@
+// Jump Shot Creator: presets and sixteen mechanics sliders, saved per player.
+const HoopJSC=(()=>{
+'use strict';let game,root,onClose,draft,preset;
+function init(g,el){game=g;root=el;}
+function open(cb){onClose=cb||null;const j=game.G.jumpers[game.G.def.id];draft=HoopRoster.cloneParams(j.params);preset=j.presetId;
+root.innerHTML=`<div class="profile-card"><div class="eyebrow">${game.G.def.name} · Shooting lab</div><h2>Jump Shot Creator</h2><p class="dim">Signature presets use each player’s authored motion. Custom mechanics use the adjustable procedural shot.</p><label>Preset<select id="jsc-preset"><option value="sig">${game.G.def.sig.name}</option>${HoopRoster.PRESETS.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}<option value="custom">Custom</option></select></label><div class="jsc-readouts" id="jsc-readouts"></div><div class="jsc-sliders">${HoopRoster.PARAMS.map(p=>`<label>${p.group} · ${p.label}<output id="jsc-val-${p.key}"></output><input type="range" data-param="${p.key}" min="${p.min??0}" max="${p.max??1}" step=".01"><small>${p.lo} → ${p.hi}</small></label>`).join('')}</div><div class="row"><button class="primary" id="jsc-apply">Apply jumper</button><button data-close>Back</button><span id="jsc-status" class="dim" role="status">Changes stay in draft until Apply.</span></div></div>`;
+root.querySelector('#jsc-preset').onchange=e=>{preset=e.target.value;const p=preset==='sig'?game.G.def.sig:HoopRoster.presetById(preset);if(p)draft=HoopRoster.cloneParams(p.params);sync();};
+root.querySelectorAll('[data-param]').forEach(input=>input.oninput=()=>{draft[input.dataset.param]=Number(input.value);preset='custom';sync(false);});
+root.querySelector('#jsc-apply').onclick=()=>{game.setJumper(draft,preset);game.save();root.querySelector('#jsc-status').textContent='Saved. Back to return to the court.';};root.querySelector('[data-close]').onclick=close;root.classList.remove('hidden');sync();}
+function sync(inputs=true){root.querySelector('#jsc-preset').value=preset;for(const p of HoopRoster.PARAMS){if(inputs)root.querySelector(`[data-param="${p.key}"]`).value=draft[p.key];root.querySelector('#jsc-val-'+p.key).textContent=Math.round(draft[p.key]*100);}
+const d=HoopShot.derive(draft,game.G.def);root.querySelector('#jsc-readouts').innerHTML=`<b>Release ${Math.round(d.releaseTime*1000)} ms</b><b>Jump ${(d.jumpH/.0254).toFixed(1)}″</b><b>Comfort ${HoopModes.ft(d.comfort)}</b><b>Spin ${d.spinRps.toFixed(1)} rps</b>`;root.querySelector('#jsc-status').textContent='Changes stay in draft until Apply.';}
+function close(){root.classList.add('hidden');const cb=onClose;onClose=null;cb&&cb();}
+return{init,open,close};})();
